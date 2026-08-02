@@ -1,0 +1,12 @@
+node_modules/
+.env
+logs/*.log
+data/state.json
+data/personality.json
+data/mood.json
+data/wren.db
+data/wren.lock
+npm-debug.log*
+*.sqlite
+*.sqlite3
+.DS_Store

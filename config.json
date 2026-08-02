@@ -1,0 +1,40 @@
+{
+  "discord": {
+    "channelId": "1478108084340785358",
+    "typingIndicator": true
+  },
+  "ai": {
+    "provider": "ollama",
+    "baseUrl": "http://localhost:11434",
+    "model": "llama3.1:latest",
+    "temperature": 0.9,
+    "topP": 0.9,
+    "maxTokens": 400,
+    "timeoutMs": 60000
+  },
+  "cooldown": {
+    "enabled": true,
+    "seconds": 8
+  },
+  "queue": {
+    "enabled": true,
+    "maxSize": 20
+  },
+  "memory": {
+    "maxMessages": 20
+  },
+  "memoryRetrieval": {
+    "maxMemories": 5,
+    "maxLore": 3
+  },
+  "interaction": {
+    "prefix": "!wren"
+  },
+  "control": {
+    "admins": [],
+    "requireAdministratorPermission": true
+  },
+  "logging": {
+    "level": "info"
+  }
+}

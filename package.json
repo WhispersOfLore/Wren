@@ -1,0 +1,30 @@
+{
+  "name": "wren",
+  "version": "1.0.0",
+  "description": "Wren — the local AI-powered Discord companion for WhisperSMP",
+  "main": "src/bot.js",
+  "scripts": {
+    "start": "node src/bot.js",
+    "dev": "nodemon src/bot.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "discord",
+    "ai",
+    "ollama",
+    "companion"
+  ],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "axios": "^1.19.0",
+    "discord.js": "^14.27.0",
+    "dotenv": "^17.4.2",
+    "sqlite3": "^6.0.1",
+    "winston": "^3.19.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.14"
+  }
+}
