@@ -119,6 +119,8 @@ she's well-informed, not yet truly experienced.
   created automatically from conversation yet, and personality/mood are
   still global rather than per-player — both remain natural next questions
   once she has more history to draw on.
-- **Phase 4** — as part of WhisperOS, she may gain tool-use abilities and
-  span multiple model backends, but her core identity in this document
-  remains the constant across all of it.
+- **Phase 4** — WhisperOS integration: Wren may gain tool-use abilities and
+  span multiple model backends to act as WhisperOS's conversational
+  interface (via APIs/services, once WhisperOS exists — Wren and WhisperOS
+  stay separate products, not a merged subsystem), but her core identity
+  in this document remains the constant across all of it.

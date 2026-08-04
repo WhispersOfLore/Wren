@@ -19,6 +19,14 @@ const MODAL_ROUTES = [
   { prefix: 'wren_lore_', handle: lorePanel.handleModalSubmit },
 ];
 
+// Select menus (string or user select) route the same way as buttons —
+// currently the control panel's mood picker and the memory panel's Add
+// Memory flow (member/category/importance pickers).
+const SELECT_ROUTES = [
+  { prefix: 'wren_control_', handle: controlPanel.handleSelectMenu },
+  { prefix: 'wren_memory_', handle: memoryPanel.handleSelectMenu },
+];
+
 function findHandler(routes, customId) {
   const route = routes.find((r) => customId.startsWith(r.prefix));
   return route?.handle;
@@ -44,9 +52,9 @@ module.exports = {
         return;
       }
 
-      // Only the control panel currently has a select menu (mood picker).
-      if (interaction.isStringSelectMenu() && interaction.customId.startsWith('wren_control_')) {
-        await controlPanel.handleSelectMenu(interaction);
+      if (interaction.isStringSelectMenu() || interaction.isUserSelectMenu()) {
+        const handle = findHandler(SELECT_ROUTES, interaction.customId);
+        if (handle) await handle(interaction);
         return;
       }
 

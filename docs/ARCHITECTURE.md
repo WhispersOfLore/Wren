@@ -505,8 +505,10 @@ retention needs.
 > given a phase number, since it strengthened the existing foundation rather
 > than adding a new capability. Check `docs/CHANGELOG.md` for the full trail.
 
-- **Phase 4** — WhisperOS integration, multiple model backends behind
-  `ollamaService`'s interface, and tool-calling abilities.
+- **Phase 4** — WhisperOS integration: Wren acting as WhisperOS's
+  conversational interface via APIs/services (separate products, not a
+  merged subsystem — see `AI/context/DECISIONS.md`), multiple model
+  backends behind `ollamaService`'s interface, and tool-calling abilities.
 - **Observations** (explicitly deferred by this sprint, architecture only
   prepared — see "Canonical vs. observation memories" above) — Wren
   autonomously noticing things from conversation and recording them as

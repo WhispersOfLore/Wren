@@ -387,4 +387,6 @@ Ollama.
 - **Phase 2** — Persistent memory via SQLite, player recognition,
   conversation history.
 - **Phase 3** — WhisperSMP knowledge: lore, NPCs, server rules.
-- **Phase 4** — WhisperOS integration, multiple AI models, tool abilities.
+- **Phase 4** — WhisperOS integration (Wren as WhisperOS's conversational
+  interface via APIs/services — separate products, not a merged
+  subsystem), multiple AI models, tool abilities.

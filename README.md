@@ -265,7 +265,9 @@ only.
 
 ## Roadmap
 
-- **Phase 4** — WhisperOS integration, multiple AI models, tool abilities.
+- **Phase 4** — WhisperOS integration (Wren as WhisperOS's conversational
+  interface via APIs/services — separate products, not a merged
+  subsystem), multiple AI models, tool abilities.
 
 See [`docs/CHANGELOG.md`](docs/CHANGELOG.md) for what's shipped so far, and
 `docs/ARCHITECTURE.md`'s Future Expansion section for the full renumbering
