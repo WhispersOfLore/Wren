@@ -2,6 +2,61 @@
 
 All notable changes to Wren are documented here.
 
+## [0.6.1] - 2026-09-15 — Live Project Awareness + Safe Expansion (Phase 11)
+
+- **Fixed the Ollama model mismatch** flagged at the end of Phase 10:
+  `config.json`'s `ai.model` (and `configManager.js`'s fallback default)
+  now points at `llama3.1:8b`, the model actually pulled in this
+  environment, instead of the never-pulled `llama3.1:latest`. Verified
+  directly with a real `generateReply()` call, then with full normal-chat
+  and project-awareness regression passes. Preferred over pulling a
+  second, redundant model.
+- **Refactored the Phase 10 hardcoded allowlist into `projectCatalog.json`**
+  (repo root) — a small, auditable, Wren-owned data file separate from
+  the enforcement logic in `projectContext.js`. Adding a project is now
+  one catalog entry (`name`, `entryPoints`, optional `aliases`/`enabled`),
+  not a code change. The catalog is validated at load time and fails
+  closed (a bad entry or a malformed file loses that entry, or the whole
+  catalog, never falls open).
+- **Expanded enabled projects from 3 to 9**: added `WhisperBot`,
+  `WhisperSMP`, `WhisperAboutIt`, `WhisperContent`, `BroBeHonest`,
+  `WhatIfSeries` alongside the original `WhisperOS`, `GamingUnfiltered`
+  (now aliased `GamezUnfiltered`), `ClayMoneyTrail`. Each was individually
+  checked against an explicit eligibility bar (real project, safe
+  orientation, no credential access needed, not retired). Deliberately
+  excluded: `YouTubeAccounts`/`TikTokAccounts` (credential-adjacent
+  infrastructure, low direct benefit here), `WhisperContentCommandCenter`/
+  `LocalViewBoard` (their own registry entries flag an unresolved
+  overlap), and `AboutIt` (retired — cannot be added; the directory
+  doesn't exist).
+- **Found and fixed a real bug** in the `PROJECTS.md` registry-summary
+  matcher: a plain substring search for `` `WhisperAboutIt` `` matched
+  the *retired* `AboutIt` row instead, because that row's own text
+  mentions `WhisperAboutIt` by name while explaining they're different
+  projects. Fixed to match only the row's first table cell; locked in
+  with a regression test.
+- Added 18 new automated tests (49 total) covering the expanded catalog:
+  every enabled project resolves under `~/Projects/`; symlink-based
+  escapes (file and directory) are rejected; catalog-level `..`/absolute/
+  credential-shaped entries are rejected at load time; disabled projects
+  behave identically to unknown ones; retired `AboutIt` is unreachable
+  while `WhisperAboutIt` resolves correctly to its own row; ordinary
+  chat never loads project context even when a project name is
+  mentioned in the message.
+- Verified command registration directly (`wren.data.toJSON()`) without
+  a live Discord connection: correct subcommand/option/choices shape for
+  all 9 enabled projects.
+- **Live Discord gateway test not possible in this environment** — no
+  real `DISCORD_TOKEN`/`.env` is configured here, so the bot cannot log
+  in at all. Everything reachable without a live gateway connection was
+  verified instead: full business logic against a real local Ollama
+  instance (all 9 projects deterministically resolved; 5 representative
+  ones — `WhisperOS`, `GamingUnfiltered`, `ClayMoneyTrail`, `WhisperSMP`,
+  `WhisperContent` — got real, grounded, non-fabricated model replies),
+  the exact command-registration payload, and audit-log output.
+- Still no handoff-write capability of any kind — explicitly deferred
+  again this phase.
+
 ## [0.6.0] - 2026-09-15 — Read-Only Project Awareness (Phase 10)
 
 Wren's first capability outside conversation/memory/lore: `/wren project

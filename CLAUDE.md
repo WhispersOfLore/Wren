@@ -11,8 +11,9 @@ A local, AI-powered Discord companion for WhisperSMP: "conversation,
 companionship, and entertainment," explicitly not utility, automation, or
 economy — that's `WhisperBot`'s job (per `README.md`). Runs entirely on
 local infrastructure: message generation goes through a local
-[Ollama](https://ollama.com) instance running `llama3.1:latest` — no
-cloud AI APIs, no OpenAI.
+[Ollama](https://ollama.com) instance running `llama3.1:8b` (corrected
+2026-09-15, Phase 11 — see "Known gap" below) — no cloud AI APIs, no
+OpenAI.
 
 **Note on git history:** this repository's entire history is a single
 commit (`Initial Wren bot setup`). Everything below was verified by
@@ -75,25 +76,68 @@ the full mocked interaction suite from prior phases" was a manual
 regression step, not automated — that's now only true of everything
 *except* project awareness, which does have real coverage.
 
-## Read-only project awareness (Phase 10)
+## Read-only project awareness (Phase 10, catalog-driven since Phase 11)
 
-Wren can now answer `/wren project <name>` for exactly three allowlisted
-projects — `WhisperOS`, `GamingUnfiltered`, `ClayMoneyTrail` — by reading
-each project's `PROJECTS.md` registry row, its latest operational
-handoff (if any) from `WhisperCommandCenter/handoffs/`, and a small,
-hardcoded set of entry-point documents (e.g. `CLAUDE.md`, `README.md`),
-then having the local model summarize that in character.
+Wren answers `/wren project <name>` for any project **enabled in
+`projectCatalog.json`** (repo root, sibling to `config.json`) — 9 today,
+listed below — by reading that project's `PROJECTS.md` registry row, its
+latest operational handoff (if any) from `WhisperCommandCenter/handoffs/`,
+and a small catalog-defined set of entry-point documents (e.g.
+`CLAUDE.md`, `README.md`), then having the local model summarize that in
+character.
 
-**This is read-only, by construction, not just by policy.** The new
-`src/services/projectContext.js` module never writes anything, never
-invokes an LLM, never runs a shell command, and only ever reads a file
-whose path was derived from a hardcoded allowlist plus this repo's own
-on-disk location — never from a user-supplied string. See that file's
-own header comment for the full safety model (allowlist → canonicalized-
-path checks → credential-filename deny patterns → size caps). Full
-detail, including the security review this was built against, belongs
-in `docs/ARCHITECTURE.md`'s "Project awareness" section, not restated
-here.
+**This is read-only, by construction, not just by policy.**
+`src/services/projectContext.js` never writes anything, never invokes an
+LLM, never runs a shell command, and only ever reads a file whose path
+was derived from `projectCatalog.json` plus this repo's own on-disk
+location — never from a user-supplied string. **The model itself never
+chooses a filesystem path** — the public API takes a project name, and
+the catalog is the only thing that turns a name into a path. See that
+file's own header comment for the full safety model (catalog →
+canonicalized-path checks → credential-filename deny patterns → size
+caps). Full detail belongs in `docs/ARCHITECTURE.md`'s "Project
+awareness" section, not restated here.
+
+**How the catalog works (`projectCatalog.json`):** a flat list of
+`{ name, enabled, entryPoints, aliases? }` entries. `WhisperCommandCenter/
+PROJECTS.md` remains the canonical registry of *what projects exist and
+their status* — the catalog only ever answers a narrower question: "is
+Wren allowed to read this project, and which specific files may she
+read?" The catalog is loaded and validated at startup (bad JSON, an
+unsafe entry point, or a `..`/absolute path in any entry is dropped or
+fails the whole catalog closed — never falls open to "allow everything").
+**To add a project:** confirm it meets the eligibility bar below, add one
+entry to `projectCatalog.json` with a small, explicit `entryPoints` list,
+done — no code change needed. **To remove one:** set `"enabled": false`
+or delete the entry; both behave identically to "unknown project" from
+the outside (no information leak about what's disabled vs. never added).
+
+**Eligibility bar for adding a project** (all should hold): canonical
+path directly under `~/Projects/`; a real, identifiable project (not a
+raw utility/storage folder); has useful entry-point documentation;
+orientation doesn't require reading any credential file; no need for
+recursive access — a handful of named files is enough; not retired or
+deleted; not a bare third-party clone without a real reason to include
+it. Credential-bearing account infrastructure (`YouTubeAccounts`,
+`TikTokAccounts`) was deliberately evaluated and **excluded** in Phase 11
+— even a README-only read felt like the wrong default for
+account-management repositories with low direct benefit to a WhisperSMP
+Discord companion; revisit only with a specific, explicit reason.
+
+**Currently enabled (9):** `WhisperOS`, `GamingUnfiltered`,
+`ClayMoneyTrail`, `WhisperBot`, `WhisperSMP`, `WhisperAboutIt`,
+`WhisperContent`, `BroBeHonest`, `WhatIfSeries`. `GamingUnfiltered` also
+has the alias `GamezUnfiltered` (its actual in-repo branding).
+`WhisperContentCommandCenter` and `LocalViewBoard` were considered and
+excluded for now — `PROJECTS.md` itself flags their scope as unresolved/
+overlapping, which risks Wren giving a confusing answer about two
+projects that might get merged or dropped.
+
+**No-handoff behavior:** most of the 9 enabled projects have no handoff
+yet (only `WhisperOS`, `GamingUnfiltered`, `ClayMoneyTrail` do, from
+Phases 6-9). That's expected and handled explicitly, not as an error —
+the model is told plainly "No recorded operational handoff exists for
+this project yet" and still gets the entry-point documents.
 
 Boundaries worth remembering:
 - Wren does **not** create, edit, or promote handoffs — she only reads
@@ -101,30 +145,34 @@ Boundaries worth remembering:
   Markdown file it points to for a matched project.
 - A handoff can be stale. Wren is told explicitly, in the model prompt,
   that repository reality outranks it and that she hasn't independently
-  verified current `HEAD` herself.
-- Only the three allowlisted projects are reachable this way. Asking
-  about anything else gets a safe "not available yet" answer — never a
-  guess, never a different file read instead.
+  verified current `HEAD` herself. No git command is ever run to check.
+- Only catalog-enabled projects are reachable this way. Asking about
+  anything else — including the retired `AboutIt` — gets a safe "not
+  available yet" answer, distinct by construction from the active,
+  unrelated `WhisperAboutIt` (verified by a regression test after a real
+  bug was found and fixed: a naive text search could have returned the
+  retired-AboutIt row's own text, which mentions `WhisperAboutIt` by
+  name, instead of `WhisperAboutIt`'s actual row).
 - ClayMoneyTrail's evidence-status vocabulary (verified fact vs.
   allegation vs. unverified lead, etc.) must survive into Wren's answer
   unchanged — the model prompt explicitly requires this, and a test
   confirms the raw vocabulary text is never altered before reaching the
   model.
-- Test with `node --test tests/projectContext.test.js
-  tests/projectAwareness.test.js`, or exercise it live via
-  `/wren project WhisperOS` in Discord (requires a running Ollama
-  instance with the configured model actually pulled — see Known gaps
-  below).
+- Ordinary conversation (`/wren ask`, mentions, prefix) never loads any
+  of this, even if a project name is mentioned in the message — a test
+  confirms it. `/wren project <name>` remains the only trigger; natural-
+  language routing was deliberately deferred, not built.
+- Test with `node --test tests/*.test.js` (49 tests), or exercise it
+  live via `/wren project WhisperOS` in Discord.
 
-**Known gap, found during Phase 10 live testing, not fixed (out of
-scope for a read-only-awareness feature):** `config.json`'s
-`ai.model` is `llama3.1:latest`, but only `llama3.1:8b` is pulled in
-this environment — every Ollama call currently 404s here, including
-pre-existing normal chat, not just project awareness. This is a
-pre-existing Wren configuration/environment gap, confirmed via a direct
-Ollama API call, and is unrelated to the new feature; project awareness
-itself handles the resulting `OllamaError` exactly the same safe way
-normal chat does (a friendly in-character error, not a crash).
+**Known gap (found Phase 10, fixed Phase 11):** `config.json`'s
+`ai.model` was `llama3.1:latest`, but only `llama3.1:8b` was pulled in
+this environment — every Ollama call 404'd, including normal chat, not
+just project awareness. Corrected 2026-09-15 by pointing `ai.model` (and
+`configManager.js`'s fallback default) at the model actually installed,
+`llama3.1:8b`, rather than pulling a redundant second model. Verified
+directly: real `generateReply()` calls now succeed, for both ordinary
+chat and project awareness, across all 9 enabled projects.
 
 ## What should an AI read first?
 

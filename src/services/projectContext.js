@@ -1,26 +1,34 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const config = require('../config/configManager');
+const logger = require('../utils/logger');
 
 /**
- * Read-only project awareness (Phase 10). This module is the ONLY place
- * that touches another project's filesystem, and it does so under a hard
- * allowlist, not user-supplied paths. It never writes anything, never
- * invokes an LLM, and never runs a shell command or another process.
+ * Read-only project awareness (Phase 10, catalog-driven since Phase 11).
+ * This module is the ONLY place that touches another project's
+ * filesystem, and it does so under a hard allowlist, not user-supplied
+ * paths. It never writes anything, never invokes an LLM, and never runs a
+ * shell command or another process.
  *
  * Safety model, in order:
- *   1. A project name must match PROJECT_ALLOWLIST exactly (case-
- *      insensitive) -- there is no fuzzy matching and no way for a
- *      user-supplied string to become a filesystem path directly.
+ *   1. A project name must match an ENABLED entry in projectCatalog.json
+ *      exactly (case-insensitive, alias-aware) -- there is no fuzzy
+ *      matching and no way for a user-supplied string to become a
+ *      filesystem path directly. WhisperCommandCenter/PROJECTS.md is
+ *      never parsed to decide *whether* a project is reachable -- only
+ *      this catalog decides that; PROJECTS.md is read only afterward, for
+ *      one bounded summary line, once a project is already approved.
  *   2. Every path actually touched is derived from PROJECTS_ROOT (this
  *      repo's own parent directory, structurally derived from __dirname --
- *      never from config or user input) plus a hardcoded relative
- *      entry-point list per project.
+ *      never from config or user input) plus the catalog's relative
+ *      entry-point list for that project.
  *   3. Every resolved path is canonicalized (fs.realpathSync) and checked
  *      to still fall inside its expected root before being read, so a
  *      symlink or a ".." component can't escape the intended directory.
  *   4. A credential-filename deny-list is checked on every candidate path
- *      regardless of where it came from, as defense in depth.
+ *      regardless of where it came from, as defense in depth -- including
+ *      against the catalog file itself at load time, so a bad catalog
+ *      entry can disable itself rather than silently expose something.
  *   5. Reads are size-capped; nothing is read recursively.
  */
 
@@ -30,17 +38,10 @@ const PROJECTS_ROOT = path.resolve(__dirname, '..', '..', '..');
 const COMMAND_CENTER_PATH = path.join(PROJECTS_ROOT, 'WhisperCommandCenter');
 const HANDOFFS_DIR = path.join(COMMAND_CENTER_PATH, 'handoffs');
 const PROJECTS_MD_PATH = path.join(COMMAND_CENTER_PATH, 'PROJECTS.md');
-
-// Phase 10 allowlist. This is the entire attack surface: adding a project
-// here (and only here) is what makes it reachable at all.
-const PROJECT_ALLOWLIST = [
-  { name: 'WhisperOS', dirName: 'WhisperOS', entryPoints: ['CLAUDE.md', 'README.md', 'docs/DEVELOPMENT_RULES.md'] },
-  { name: 'GamingUnfiltered', dirName: 'GamingUnfiltered', entryPoints: ['CLAUDE.md', 'README.md'] },
-  { name: 'ClayMoneyTrail', dirName: 'ClayMoneyTrail', entryPoints: ['README.md'] },
-];
+const CATALOG_PATH = path.join(__dirname, '..', '..', 'projectCatalog.json');
 
 // Defense in depth: never read a path matching one of these, no matter
-// where the path came from or whether it's in an entry-point list above.
+// where the path came from or whether it's in a catalog entry-point list.
 const CREDENTIAL_DENY_PATTERNS = [
   /(^|[\\/])\.env(\.|$)/i,
   /token\.json$/i,
@@ -56,15 +57,96 @@ function isDenied(candidatePath) {
   return CREDENTIAL_DENY_PATTERNS.some((re) => re.test(candidatePath));
 }
 
+/**
+ * Loads projectCatalog.json and validates every entry defensively. A
+ * malformed catalog file fails to an EMPTY catalog (nothing reachable),
+ * never to "allow everything" -- and a single bad entry is dropped and
+ * logged, not allowed to crash the whole bot or to silently pass through
+ * an unsafe entry point.
+ */
+function loadCatalog() {
+  let raw;
+  try {
+    raw = fs.readFileSync(CATALOG_PATH, 'utf8');
+  } catch (err) {
+    logger.error('projectCatalog.json could not be read -- project awareness disabled', { error: err.message });
+    return [];
+  }
+
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch (err) {
+    logger.error('projectCatalog.json is not valid JSON -- project awareness disabled', { error: err.message });
+    return [];
+  }
+
+  if (!data || data.schema_version !== 1 || !Array.isArray(data.projects)) {
+    logger.error('projectCatalog.json does not match the expected schema -- project awareness disabled');
+    return [];
+  }
+
+  const catalog = [];
+  const seenNames = new Set();
+
+  for (const raw_entry of data.projects) {
+    const entry = raw_entry;
+    if (!entry || typeof entry.name !== 'string' || !entry.name.trim()) {
+      logger.warn('Skipping projectCatalog.json entry with a missing/invalid name');
+      continue;
+    }
+    const name = entry.name.trim();
+    if (seenNames.has(name.toLowerCase())) {
+      logger.warn(`Skipping duplicate projectCatalog.json entry: ${name}`);
+      continue;
+    }
+
+    const dirName = typeof entry.dirName === 'string' && entry.dirName.trim() ? entry.dirName.trim() : name;
+    const aliases = Array.isArray(entry.aliases) ? entry.aliases.filter((a) => typeof a === 'string' && a.trim()) : [];
+    const enabled = entry.enabled !== false; // default true, but explicit false disables
+
+    const rawEntryPoints = Array.isArray(entry.entryPoints) ? entry.entryPoints : [];
+    const entryPoints = [];
+    for (const ep of rawEntryPoints) {
+      if (typeof ep !== 'string' || !ep.trim()) continue;
+      if (path.isAbsolute(ep) || ep.includes('..')) {
+        logger.warn(`Dropping unsafe entry point for ${name}: ${ep}`);
+        continue;
+      }
+      if (isDenied(ep)) {
+        logger.warn(`Dropping credential-shaped entry point for ${name}: ${ep}`);
+        continue;
+      }
+      entryPoints.push(ep);
+    }
+
+    if (entryPoints.length === 0) {
+      logger.warn(`Skipping projectCatalog.json entry with no safe entry points: ${name}`);
+      continue;
+    }
+
+    seenNames.add(name.toLowerCase());
+    catalog.push({ name, dirName, aliases, enabled, entryPoints });
+  }
+
+  return catalog;
+}
+
+const PROJECT_CATALOG = loadCatalog();
+
 function findAllowlistEntry(name) {
   const needle = String(name || '').trim().toLowerCase();
   if (!needle) return null;
-  return PROJECT_ALLOWLIST.find((p) => p.name.toLowerCase() === needle) || null;
+  const match = PROJECT_CATALOG.find(
+    (p) => p.name.toLowerCase() === needle || p.aliases.some((a) => a.toLowerCase() === needle),
+  );
+  if (!match || !match.enabled) return null;
+  return match;
 }
 
 /** List of project names Wren currently has awareness of. Safe to show to a user. */
 function listAllowedProjects() {
-  return PROJECT_ALLOWLIST.map((p) => p.name);
+  return PROJECT_CATALOG.filter((p) => p.enabled).map((p) => p.name);
 }
 
 function resolveProjectRoot(dirName) {
@@ -223,8 +305,16 @@ function readRegistrySummary(name) {
   } catch {
     return null;
   }
-  const marker = `\`${name}\``;
-  const row = content.split('\n').find((line) => line.startsWith('|') && line.includes(marker));
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // The name must be the row's FIRST cell (optionally with a trailing
+  // slash, e.g. `ClayMoneyTrail/`) -- never merely a substring anywhere
+  // in the row. A plain "line includes this name" check would also match
+  // a *different* project's row whose own prose happens to mention this
+  // name in passing -- confirmed real case: the retired AboutIt row's
+  // text says "Do not confuse with `WhisperAboutIt`", which would
+  // otherwise be returned as WhisperAboutIt's own registry summary.
+  const rowPattern = new RegExp(`^\\|\\s*\`${escaped}/?\`\\s*\\|`);
+  const row = content.split('\n').find((line) => rowPattern.test(line));
   if (!row) return null;
   return row.length > 500 ? `${row.slice(0, 500)}…` : row;
 }
@@ -318,10 +408,13 @@ module.exports = {
     PROJECTS_ROOT,
     COMMAND_CENTER_PATH,
     HANDOFFS_DIR,
-    PROJECT_ALLOWLIST,
+    CATALOG_PATH,
+    PROJECT_CATALOG,
+    loadCatalog,
     isDenied,
     readEntryPointDoc,
     findLatestHandoff,
     resolveProjectRoot,
+    findAllowlistEntry,
   },
 };

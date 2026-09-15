@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "projects": [
+    {
+      "name": "WhisperOS",
+      "enabled": true,
+      "entryPoints": ["CLAUDE.md", "README.md", "docs/DEVELOPMENT_RULES.md"]
+    },
+    {
+      "name": "GamingUnfiltered",
+      "enabled": true,
+      "aliases": ["GamezUnfiltered"],
+      "entryPoints": ["CLAUDE.md", "README.md"]
+    },
+    {
+      "name": "ClayMoneyTrail",
+      "enabled": true,
+      "entryPoints": ["README.md"]
+    },
+    {
+      "name": "WhisperBot",
+      "enabled": true,
+      "entryPoints": ["CLAUDE.md", "README.md"]
+    },
+    {
+      "name": "WhisperSMP",
+      "enabled": true,
+      "entryPoints": ["CLAUDE.md"]
+    },
+    {
+      "name": "WhisperAboutIt",
+      "enabled": true,
+      "entryPoints": ["REVIEW.md"]
+    },
+    {
+      "name": "WhisperContent",
+      "enabled": true,
+      "entryPoints": ["README.md"]
+    },
+    {
+      "name": "BroBeHonest",
+      "enabled": true,
+      "entryPoints": ["README.md"]
+    },
+    {
+      "name": "WhatIfSeries",
+      "enabled": true,
+      "entryPoints": ["README.md"]
+    }
+  ]
+}

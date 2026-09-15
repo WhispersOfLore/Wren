@@ -64,7 +64,7 @@ further down.
                                             │
                                   ┌─────────▼─────────┐
                                   │  Ollama (local)     │
-                                  │  llama3.1:latest    │
+                                  │  llama3.1:8b        │
                                   └─────────────────────┘
 
         ┌─────────────────────┐        ┌─────────────────────┐
@@ -494,23 +494,46 @@ app do," `logs/audit.log` answers "who changed Wren's configuration or
 knowledge, and when" — different questions, different audiences, different
 retention needs.
 
-## Project awareness (Phase 10)
+## Project awareness (Phase 10; catalog-driven since Phase 11)
 
-`src/services/projectContext.js` gives Wren read-only awareness of
-exactly three other projects (`WhisperOS`, `GamingUnfiltered`,
-`ClayMoneyTrail`), reachable only via `/wren project <name>`
-(`src/commands/wren.js` → `src/interactions/projectHandler.js`).
+`src/services/projectContext.js` gives Wren read-only awareness of every
+project **enabled in `projectCatalog.json`** (9 as of Phase 11),
+reachable only via `/wren project <name>` (`src/commands/wren.js` →
+`src/interactions/projectHandler.js`).
 
-**Data flow:** `PROJECT_ALLOWLIST` (hardcoded in `projectContext.js`) →
+**Data flow:** `projectCatalog.json` (repo root; loaded and validated by
+`loadCatalog()` at module load — a malformed file or an unsafe entry
+fails that entry, or the whole catalog, *closed*, never open) →
 canonicalized project root (derived from this repo's own on-disk
-location, never from config or user input) → a matching row read from
-`WhisperCommandCenter/PROJECTS.md` (one line, bounded) → the newest
-handoff for that exact project/path from `WhisperCommandCenter/
+location, never from config, the catalog file's own path fields, or user
+input) → a matching row read from `WhisperCommandCenter/PROJECTS.md`
+(one line, bounded, and matched only against the row's *first cell* —
+see the note below on why a plain substring search was unsafe) → the
+newest handoff for that exact project/path from `WhisperCommandCenter/
 handoffs/index.json` (validated to resolve inside `handoffs/`, never
-elsewhere) → a small, per-project hardcoded list of entry-point
-documents (e.g. `CLAUDE.md`, `README.md`) read with a byte cap. All of
-that assembly is pure/deterministic — `projectContext.js` never calls
-Ollama and never writes anything.
+elsewhere; absent entirely for most of the 9 projects today, handled as
+an explicit "no handoff" state, not an error) → the catalog's per-project
+entry-point list (e.g. `CLAUDE.md`, `README.md`) read with a byte cap.
+All of that assembly is pure/deterministic — `projectContext.js` never
+calls Ollama and never writes anything.
+
+**Why `PROJECTS.md` matching had to be exact-cell, not substring:** a
+real bug, found and fixed in Phase 11 testing — a plain "does this line
+contain `` `WhisperAboutIt` ``" search matched the *retired* `AboutIt`
+row instead of `WhisperAboutIt`'s own row, because that row's own text
+happens to say "Do not confuse with `WhisperAboutIt`". Fixed by requiring
+the name to be the row's first table cell (`^\|\s*`name`/?\`\s*\|`),
+with a regression test locking this in.
+
+**Catalog vs. registry, the actual division of ownership:**
+`WhisperCommandCenter/PROJECTS.md` stays the canonical source for *what
+projects exist and their status* — `projectContext.js` reads it but
+never uses it to decide what's reachable. `projectCatalog.json` answers
+only "is Wren allowed to read this project, and which files may she
+read" — a narrow, Wren-owned policy layer, not a duplicate project
+database. Adding a project means one new catalog entry, not a code
+change; see `Wren/CLAUDE.md` for the eligibility bar used to choose the
+current 9.
 
 **Model call:** `src/services/projectAwareness.js` formats the above as
 a labeled "REFERENCE CONTEXT" block, prepends explicit rules (repository
@@ -522,9 +545,10 @@ context, and makes exactly one `generateReply()` call — reusing the
 existing `ollamaService`/`cooldownManager`/`queueManager` infrastructure
 rather than opening a second path to the model.
 
-**Security model, defense in depth:** (1) a hardcoded project allowlist
-— there is no path parameter in the public API at all, only a project
-name; (2) every path touched is canonicalized (`fs.realpathSync`) and
+**Security model, defense in depth:** (1) a project catalog
+(`projectCatalog.json`), validated at load time — there is no path
+parameter in the public API at all, only a project name; (2) every path
+touched is canonicalized (`fs.realpathSync`) and
 checked against its expected root before being read; (3) a credential-
 filename deny-list (`.env*`, `token.json`, `client_secret*`,
 `id_rsa`, `secrets/`, etc.) is checked independently of where a path

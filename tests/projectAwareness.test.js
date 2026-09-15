@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 
 const auditLog = require('../src/audit/auditLog');
 const projectContext = require('../src/services/projectContext');
+const conversationManager = require('../src/managers/conversationManager');
 const { handleProjectAwarenessRequest, formatReferenceContext, RULES } = require('../src/services/projectAwareness');
 
 function nextAuditEvent() {
@@ -64,6 +65,22 @@ test('the model-facing RULES include every required safety instruction', () => {
   assert.match(RULES, /Do NOT invent project state/i);
   assert.match(RULES, /never restate an allegation or unverified lead as an established fact/i);
   assert.match(RULES, /Do not offer opinions, rankings, or political conclusions/i);
+});
+
+// --- 13/14: ordinary chat never loads project context; /wren project does ---
+
+test('ordinary conversation never includes REFERENCE CONTEXT, even when a project name is mentioned', async () => {
+  const messages = await conversationManager.getMessages('phase11-isolation-test-channel', 'What is happening with WhisperOS right now?');
+  const systemMsg = messages.find((m) => m.role === 'system');
+  assert.equal(systemMsg.content.includes('REFERENCE CONTEXT'), false);
+  assert.equal(systemMsg.content.includes(RULES), false);
+});
+
+test('the explicit project-awareness path DOES build a REFERENCE CONTEXT-labeled prompt', () => {
+  const ctx = projectContext.getProjectContext('WhisperBot');
+  assert.equal(ctx.allowed, true);
+  const formatted = formatReferenceContext(ctx);
+  assert.match(formatted, /REFERENCE CONTEXT/);
 });
 
 test('a denied request never calls the Ollama service (no network attempted)', async () => {
