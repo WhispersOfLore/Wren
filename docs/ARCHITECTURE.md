@@ -494,6 +494,50 @@ app do," `logs/audit.log` answers "who changed Wren's configuration or
 knowledge, and when" — different questions, different audiences, different
 retention needs.
 
+## Project awareness (Phase 10)
+
+`src/services/projectContext.js` gives Wren read-only awareness of
+exactly three other projects (`WhisperOS`, `GamingUnfiltered`,
+`ClayMoneyTrail`), reachable only via `/wren project <name>`
+(`src/commands/wren.js` → `src/interactions/projectHandler.js`).
+
+**Data flow:** `PROJECT_ALLOWLIST` (hardcoded in `projectContext.js`) →
+canonicalized project root (derived from this repo's own on-disk
+location, never from config or user input) → a matching row read from
+`WhisperCommandCenter/PROJECTS.md` (one line, bounded) → the newest
+handoff for that exact project/path from `WhisperCommandCenter/
+handoffs/index.json` (validated to resolve inside `handoffs/`, never
+elsewhere) → a small, per-project hardcoded list of entry-point
+documents (e.g. `CLAUDE.md`, `README.md`) read with a byte cap. All of
+that assembly is pure/deterministic — `projectContext.js` never calls
+Ollama and never writes anything.
+
+**Model call:** `src/services/projectAwareness.js` formats the above as
+a labeled "REFERENCE CONTEXT" block, prepends explicit rules (repository
+reality outranks this context; never claim an action was performed;
+never restate an allegation/unverified lead as fact; no opinions on
+named people), appends it after `personalityManager.getSystemPrompt()`
+the same way `conversationManager.getMessages()` appends memory/lore
+context, and makes exactly one `generateReply()` call — reusing the
+existing `ollamaService`/`cooldownManager`/`queueManager` infrastructure
+rather than opening a second path to the model.
+
+**Security model, defense in depth:** (1) a hardcoded project allowlist
+— there is no path parameter in the public API at all, only a project
+name; (2) every path touched is canonicalized (`fs.realpathSync`) and
+checked against its expected root before being read; (3) a credential-
+filename deny-list (`.env*`, `token.json`, `client_secret*`,
+`id_rsa`, `secrets/`, etc.) is checked independently of where a path
+came from; (4) no recursive directory reads, ever; (5) per-document and
+total byte caps, with truncation explicitly reported, never silent.
+Audit events (`project_context_requested/loaded/denied/truncated`) go
+through the existing `auditLog` pub/sub, same as every other
+administrative action.
+
+See `Wren/CLAUDE.md`'s "Read-only project awareness" section for the
+user-facing summary and known gaps; `tests/projectContext.test.js` and
+`tests/projectAwareness.test.js` for the safety-property test suite.
+
 ## Future expansion
 
 > Note: the roadmap has been renumbered twice — Phase 2 became the Identity

@@ -2,6 +2,40 @@
 
 All notable changes to Wren are documented here.
 
+## [0.6.0] - 2026-09-15 — Read-Only Project Awareness (Phase 10)
+
+Wren's first capability outside conversation/memory/lore: `/wren project
+<name>` answers what's currently happening with one of three allowlisted
+projects (`WhisperOS`, `GamingUnfiltered`, `ClayMoneyTrail`), using the
+shared handoff/registry system in `~/Projects/WhisperCommandCenter/`.
+
+- Added `src/services/projectContext.js` — deterministic, read-only data
+  layer. No LLM calls, no shell execution, no writes. Hardcoded project
+  allowlist; every path canonicalized and root-checked before reading;
+  credential-filename deny-list as defense in depth; per-document and
+  total size caps with explicit truncation reporting.
+- Added `src/services/projectAwareness.js` — the one place that turns
+  that data into a single `generateReply()` call, reusing the existing
+  cooldown/queue infrastructure. The model prompt explicitly requires:
+  repository reality outranks this context; never claim an action was
+  performed; never restate an allegation/unverified lead as fact; no
+  opinions on named people.
+- Added `/wren project` subcommand (`src/commands/wren.js` +
+  `src/interactions/projectHandler.js`), same channel restriction as
+  `/wren ask`.
+- Added `project_context_requested/loaded/denied/truncated` audit
+  events through the existing `auditLog` pub/sub.
+- **First real automated test suite for this project**: `npm test` now
+  runs `node --test tests/*.test.js` (31 tests) instead of the previous
+  placeholder. Confirmed passing under both the workstation's global
+  Node and Node 22; unlike WhisperOS, no Node-version pin was needed —
+  `sqlite3`'s N-API binding is ABI-stable, verified directly.
+- **Known gap, not fixed (out of scope for this feature):**
+  `config.json`'s `ai.model` (`llama3.1:latest`) isn't actually pulled
+  in this environment (only `llama3.1:8b` is) — every Ollama call
+  currently 404s, a pre-existing issue affecting normal chat too, found
+  during live testing of this feature.
+
 ## [0.5.0] - 2026-08-02 — Stabilization Sprint
 
 Not a feature phase — an engineering-quality sprint to make Wren

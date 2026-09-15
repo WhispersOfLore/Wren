@@ -4,8 +4,10 @@ const { buildControlPanel } = require('../control/controlPanel');
 const { buildMemoryPanel } = require('../control/memoryPanel');
 const { buildLorePanel } = require('../control/lorePanel');
 const { handleAsk } = require('../interactions/slashHandler');
+const { handleProject } = require('../interactions/projectHandler');
 const playerManager = require('../memory/playerManager');
 const { ephemeral } = require('../utils/discordReply');
+const { listAllowedProjects } = require('../services/projectContext');
 
 /**
  * Replies with a denial and returns true if the invoking member isn't an
@@ -42,7 +44,19 @@ module.exports = {
         ),
     )
     .addSubcommand((sub) => sub.setName('memory').setDescription("Manage Wren's memories (admin only)"))
-    .addSubcommand((sub) => sub.setName('lore').setDescription("Manage Wren's lore archive (admin only)")),
+    .addSubcommand((sub) => sub.setName('lore').setDescription("Manage Wren's lore archive (admin only)"))
+    .addSubcommand((sub) =>
+      sub
+        .setName('project')
+        .setDescription("Ask Wren what's happening with a project (read-only)")
+        .addStringOption((opt) =>
+          opt
+            .setName('name')
+            .setDescription('Which project?')
+            .setRequired(true)
+            .addChoices(...listAllowedProjects().map((name) => ({ name, value: name }))),
+        ),
+    ),
 
   async execute(interaction) {
     const sub = interaction.options.getSubcommand();
@@ -82,6 +96,11 @@ module.exports = {
     if (sub === 'lore') {
       if (await denyIfNotAdmin(interaction)) return;
       await interaction.reply(ephemeral(await buildLorePanel()));
+      return;
+    }
+
+    if (sub === 'project') {
+      await handleProject(interaction);
     }
   },
 };

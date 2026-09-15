@@ -82,6 +82,12 @@ class ConfigManager {
       level: process.env.LOG_LEVEL || fileConfig.logging?.level || 'info',
     };
 
+    this.projectAwareness = {
+      enabled: fileConfig.projectAwareness?.enabled ?? true,
+      maxDocBytes: fileConfig.projectAwareness?.maxDocBytes ?? 8000,
+      maxTotalBytes: fileConfig.projectAwareness?.maxTotalBytes ?? 24000,
+    };
+
     this.env = process.env.NODE_ENV || 'development';
 
     if (!this.discord.channelId) {

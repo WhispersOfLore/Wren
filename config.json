@@ -36,5 +36,10 @@
   },
   "logging": {
     "level": "info"
+  },
+  "projectAwareness": {
+    "enabled": true,
+    "maxDocBytes": 8000,
+    "maxTotalBytes": 24000
   }
 }
