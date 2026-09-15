@@ -6,7 +6,7 @@
   "ai": {
     "provider": "ollama",
     "baseUrl": "http://localhost:11434",
-    "model": "llama3.1:latest",
+    "model": "llama3.1:8b",
     "temperature": 0.9,
     "topP": 0.9,
     "maxTokens": 400,

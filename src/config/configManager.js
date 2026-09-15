@@ -43,7 +43,7 @@ class ConfigManager {
     this.ai = {
       provider: fileConfig.ai?.provider || 'ollama',
       baseUrl: fileConfig.ai?.baseUrl || 'http://localhost:11434',
-      model: fileConfig.ai?.model || 'llama3.1:latest',
+      model: fileConfig.ai?.model || 'llama3.1:8b',
       temperature: fileConfig.ai?.temperature ?? 0.9,
       topP: fileConfig.ai?.topP ?? 0.9,
       maxTokens: fileConfig.ai?.maxTokens ?? 400,

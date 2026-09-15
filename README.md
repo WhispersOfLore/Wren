@@ -7,7 +7,7 @@ entertainment, with sweet tea in one hand and sharp wit in the other.
 
 She runs entirely on local infrastructure: no paid APIs, no OpenAI, no cloud
 AI. Message generation happens through [Ollama](https://ollama.com) running
-`llama3.1:latest` on your own machine. See [`docs/PERSONALITY.md`](docs/PERSONALITY.md)
+`llama3.1:8b` on your own machine. See [`docs/PERSONALITY.md`](docs/PERSONALITY.md)
 for who she is, and [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for how
 the pieces fit together.
 
@@ -15,7 +15,7 @@ the pieces fit together.
 
 - Node.js 18+
 - [Ollama](https://ollama.com) installed and running locally
-- The `llama3.1:latest` model pulled (`ollama pull llama3.1:latest`)
+- The `llama3.1:8b` model pulled (`ollama pull llama3.1:8b`)
 - A Discord bot application and token
 
 ## Installation
@@ -46,7 +46,7 @@ npm install
 
 ```bash
 # Install Ollama: https://ollama.com/download
-ollama pull llama3.1:latest
+ollama pull llama3.1:8b
 
 # Ollama should be reachable at http://localhost:11434 (the default).
 # Verify it's up:
@@ -242,7 +242,7 @@ words that actually appear in the memory/lore content, or check
 **"Ollama isn't answering" / connection refused**
 Ollama isn't running, or isn't reachable at `ai.baseUrl` in `config.json`.
 Run `ollama serve` (or check it's already running) and `ollama list` to
-confirm `llama3.1:latest` is present.
+confirm `llama3.1:8b` is present (or whatever `config.json`'s `ai.model` is set to).
 
 **"Wren is already running (PID ...). Refusing to start a second instance."**
 Working as intended — Wren refuses to run two copies against the same
