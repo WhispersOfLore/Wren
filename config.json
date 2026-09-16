@@ -40,6 +40,8 @@
   "projectAwareness": {
     "enabled": true,
     "maxDocBytes": 8000,
-    "maxTotalBytes": 24000
+    "maxTotalBytes": 24000,
+    "draftApprovalTtlMs": 900000,
+    "maxPendingDrafts": 200
   }
 }

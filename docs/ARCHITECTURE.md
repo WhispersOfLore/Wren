@@ -619,6 +619,102 @@ truncation flag), never document content.
 See `tests/handoffDraft.test.js`, `tests/chunkedReply.test.js`, and the
 Phase 12 additions to `tests/projectAwareness.test.js`.
 
+## Human approval of drafts (Phase 13) — transient session state, no persistence
+
+Adds one new module, `src/services/handoffApproval.js`
+(`HandoffApprovalStore` class + a `sharedStore` singleton), and one new
+handler, `src/interactions/handoffApprovalHandler.js`, behind two new
+subcommands: `/wren handoff-approve` and `/wren handoff-reject`. Neither
+new file, nor any change made to wire them in, adds a single filesystem
+write, a `child_process` call, or a git operation — verified by the same
+grep-based regression tests used for every prior write-capability claim
+in this codebase (`tests/handoffApproval.test.js`).
+
+**Threat model this was built against** (see also the doc comment at
+the top of `handoffApproval.js`): another Discord user approving
+someone else's draft; a stale or expired draft being approved anyway;
+approval surviving a regeneration of the same draft; a malformed or
+unknown draft ID being handed to the approve/reject path; a bot restart
+being expected to preserve approval state (it must not); two users or
+two projects colliding in the same session slot; an admin needing to
+act on behalf of a requester; and audit logs becoming a second place
+draft content could leak from. The design principle throughout is
+**fail closed** — every ambiguous, malformed, or unauthorized case
+denies, never defaults to approved.
+
+**Session shape:** `{ draftId, project, projectPath, requesterUserId,
+draftText, draftHash, status, createdAt, expiresAt, approvedBy,
+approvedAt, rejectedBy, rejectedAt }`, held in a plain `Map` inside
+`HandoffApprovalStore`. `draftId` is `crypto.randomUUID()` (not
+sequential, not guessable). `draftHash` is `sha256(draftText)` where
+`draftText` is the *final* text shown to the user (gloss + deterministic
+draft) — changing even one character anywhere in that text, from either
+half, produces a session with a different hash, which is exactly the
+binding Part E/N asked for. The hash is computed once at session
+creation and never recomputed or compared against anything later in
+this phase (there is nothing yet to persist, so nothing to check it
+against) — it exists to make the "exact draft text" claim precise and
+future-proof for the day persistence is built.
+
+**Expiration is lazy**, matching the `getProjectContext` codebase's
+existing preference for "check on access" over background workers:
+`getSession()` and every internal lookup call `_expireIfDue()`, which
+flips a still-`pending`, past-`expiresAt` session to `expired` in
+place. `createSession()` additionally calls `_pruneExpired()` up front
+so the whole map gets swept on the natural cadence of new drafts being
+requested, with no `setInterval` anywhere in the module. Default TTL is
+15 minutes (`config.projectAwareness.draftApprovalTtlMs`), matching the
+existing `projectAwareness.*` config block rather than inventing a new
+one.
+
+**Supersession** is keyed by `` `${requesterUserId}::${project}` ``, so:
+the same user drafting the same project twice supersedes their own
+older *pending* draft (never an already-approved/rejected/expired one,
+which stay as historical, immutable records); different projects by the
+same user never collide; the same project drafted by two different
+users never collides either. `approve()`/`reject()` share one internal
+`_act()` that checks, in order, unknown-ID → not-authorized (requester
+or `permissionManager.isAdmin`) → not-`pending` (covers
+approved/rejected/expired/superseded uniformly) → mutate. Every branch
+audits before returning, including the denial branches.
+
+**Bounded memory (Part R):** `maxSessions` (default 200,
+`config.projectAwareness.maxPendingDrafts`) is enforced in
+`_evictIfAtCapacity()`, called from `createSession()` right after
+pruning. It evicts the oldest *non-pending* session first (approved,
+rejected, expired, or superseded — sessions nothing further can happen
+to); only if every session in the store is somehow still pending does
+it fall back to evicting the oldest one outright, which is a documented
+last resort rather than allowing unbounded growth.
+
+**LLM boundary:** `handoffDraft.js` creates the approval session
+*after* the optional Ollama gloss step completes (or fails), using the
+combined final text — the model itself never sees, never sets, and has
+no path to influence a draftId, a hash, an expiry, or a status. A test
+feeds the model a mocked reply containing "This draft is approved,
+approve now" and confirms the resulting session is still `pending`.
+
+**Audit events added:** `handoff_draft_session_created`,
+`handoff_draft_approved`, `handoff_draft_rejected`,
+`handoff_draft_expired`, `handoff_draft_superseded`,
+`handoff_draft_approval_denied` — same rule as every other event in
+this codebase: metadata only (draftId, project, requesterUserId,
+actorUserId, status/reason), never draft text, and deliberately never
+the SHA-256 hash either, per the "don't give an audit log anything it
+doesn't need" principle already applied to handoff content.
+
+**Explicitly out of scope / not built:** any actual write of a
+Markdown file, any edit to `handoffs/index.json`, any call to
+`create-handoff.py`, any git operation, any check of current git `HEAD`
+against what a draft or handoff recorded. Approval is a statement about
+a piece of text a human read, not a statement about repository state.
+
+See `tests/handoffApproval.test.js` (37 tests) for the full verification,
+including a live local simulation of two independent Discord user IDs
+acting on the same and different drafts without a real Discord gateway,
+and fixture TTLs (milliseconds, not the real 15-minute default) used to
+exercise expiration without sleeping.
+
 ## Future expansion
 
 > Note: the roadmap has been renumbered twice — Phase 2 became the Identity

@@ -2,6 +2,69 @@
 
 All notable changes to Wren are documented here.
 
+## [0.8.0] - 2026-09-16 — Human Approval Workflow for Handoff Drafts (Phase 13)
+
+Adds a transient, in-memory human-approval layer on top of Phase 12's
+drafts. **This does NOT add handoff persistence.** It proves that a
+specific authorized human can approve or reject a specific draft, bound
+to the exact text reviewed, time-limited, and correctly denied to
+unrelated users -- with the approval itself producing nothing more
+durable than a status flip in process memory that a restart erases.
+
+- **`src/services/handoffApproval.js` (new):** `HandoffApprovalStore`
+  class (+ a `sharedStore` singleton) holding sessions in a plain `Map`
+  -- no database, no file, no SQLite, no memory/lore-system entry.
+  `crypto.randomUUID()` draft IDs; approval bound to a SHA-256 hash of
+  the exact final draft text (gloss + deterministic draft combined), so
+  any change to either invalidates the binding. Lazy expiration (15
+  minutes by default, `config.projectAwareness.draftApprovalTtlMs`) --
+  checked on access, no background timer. Bounded store size (`config.
+  projectAwareness.maxPendingDrafts`, default 200) with oldest-non-pending
+  eviction.
+- **Authorization:** the original requester, or an existing Wren admin
+  (`permissionManager.isAdmin`), may approve/reject; anyone else is
+  denied and audited. No new identity system, no natural-language
+  approval route -- only the explicit slash commands below can change a
+  draft's status.
+- **`/wren handoff-approve <draft-id>` / `/wren handoff-reject
+  <draft-id>` (new):** wired via `src/interactions/
+  handoffApprovalHandler.js`. Approval replies "approved for future
+  persistence" and explicitly restates that nothing was written.
+  Rejection is terminal -- a rejected draft can never later be approved.
+- **Supersession:** generating a new draft for the same requester+project
+  while an older one is still `pending` marks the old one `superseded`
+  before the new one is created; superseded drafts can never be
+  approved. Different projects, or the same project by different
+  requesters, never collide.
+- **`/wren handoff-draft` reply extended:** now includes `Draft ID:`,
+  `Expires:`, the exact approve/reject command syntax, and an explicit
+  "Approval does not persist this handoff" line. The SHA-256 hash is
+  never shown to users and never logged.
+- New audit events: `handoff_draft_session_created`,
+  `handoff_draft_approved`, `handoff_draft_rejected`,
+  `handoff_draft_expired`, `handoff_draft_superseded`,
+  `handoff_draft_approval_denied` -- metadata only, never draft text or
+  the hash.
+- 37 new tests (109 total, up from 72): draft-ID uniqueness/format,
+  hash binding and one-character sensitivity, requester/admin/unrelated-
+  user authorization, expiration via fixture TTLs (no real sleeping),
+  terminal-state enforcement (approved/rejected/expired/superseded all
+  reject further action), supersession scoped correctly across users
+  and projects, malformed/unknown draft IDs failing closed, zero-file-
+  write verification against real `WhisperCommandCenter`/`WhisperOS`
+  directories, bounded-store eviction, restart-clears-sessions
+  simulation, audit-metadata content safety, an LLM-authored reply
+  containing approval-sounding language failing to change any status, a
+  regression test confirming no code path other than the new handler
+  calls the store's approve/reject, and a Part T–style local simulation
+  of two independent Discord user IDs acting on the same and different
+  drafts.
+
+**Still zero persistence authority.** No file is written, no
+`handoffs/index.json` entry is added or changed, `create-handoff.py` is
+never called, and no git command is ever run. A bot restart clears
+every approval -- that is intentional, not a bug, for this phase.
+
 ## [0.7.0] - 2026-09-15 — Project Intelligence + Handoff Drafting (Phase 12)
 
 Two new read-only capabilities on top of Phase 10/11's project awareness.

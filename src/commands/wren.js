@@ -6,6 +6,7 @@ const { buildLorePanel } = require('../control/lorePanel');
 const { handleAsk } = require('../interactions/slashHandler');
 const { handleProject } = require('../interactions/projectHandler');
 const { handleHandoffDraft } = require('../interactions/handoffDraftHandler');
+const { handleHandoffApprove, handleHandoffReject } = require('../interactions/handoffApprovalHandler');
 const playerManager = require('../memory/playerManager');
 const { ephemeral } = require('../utils/discordReply');
 const { listAllowedProjects } = require('../services/projectContext');
@@ -69,6 +70,22 @@ module.exports = {
             .setRequired(true)
             .addChoices(...listAllowedProjects().map((name) => ({ name, value: name }))),
         ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('handoff-approve')
+        .setDescription('Approve a handoff draft you (or an admin) reviewed -- does not save anything')
+        .addStringOption((opt) =>
+          opt.setName('draft-id').setDescription('The Draft ID shown with the draft').setRequired(true),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('handoff-reject')
+        .setDescription('Reject a handoff draft -- final, does not save anything')
+        .addStringOption((opt) =>
+          opt.setName('draft-id').setDescription('The Draft ID shown with the draft').setRequired(true),
+        ),
     ),
 
   async execute(interaction) {
@@ -119,6 +136,16 @@ module.exports = {
 
     if (sub === 'handoff-draft') {
       await handleHandoffDraft(interaction);
+      return;
+    }
+
+    if (sub === 'handoff-approve') {
+      await handleHandoffApprove(interaction);
+      return;
+    }
+
+    if (sub === 'handoff-reject') {
+      await handleHandoffReject(interaction);
     }
   },
 };

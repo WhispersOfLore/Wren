@@ -86,6 +86,8 @@ class ConfigManager {
       enabled: fileConfig.projectAwareness?.enabled ?? true,
       maxDocBytes: fileConfig.projectAwareness?.maxDocBytes ?? 8000,
       maxTotalBytes: fileConfig.projectAwareness?.maxTotalBytes ?? 24000,
+      draftApprovalTtlMs: fileConfig.projectAwareness?.draftApprovalTtlMs ?? 15 * 60 * 1000,
+      maxPendingDrafts: fileConfig.projectAwareness?.maxPendingDrafts ?? 200,
     };
 
     this.env = process.env.NODE_ENV || 'development';

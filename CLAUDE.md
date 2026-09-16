@@ -223,6 +223,75 @@ labels multi-message responses `**(part N/M)**` in order.
 Test with `node --test tests/handoffDraft.test.js tests/chunkedReply.test.js`,
 or live via `/wren handoff-draft WhisperOS` in Discord.
 
+## Human approval of drafts (Phase 13) — transient state only, still no persistence
+
+`/wren handoff-approve <draft-id>` and `/wren handoff-reject <draft-id>`
+let a human record a decision about a specific draft `/wren
+handoff-draft` produced. **This does NOT implement handoff persistence.**
+Approving a draft never writes a file, never touches
+`handoffs/index.json`, never calls `create-handoff.py`, never commits
+anything — the only effect is an in-memory status flip on a session
+object that a restart erases. That is intentional: Phase 13 proves the
+*workflow* (a specific human can approve a specific piece of text, and
+nobody else can), not a write path. Persistence, if it is ever built, is
+future work with its own review.
+
+**Session model (`src/services/handoffApproval.js`):** every `/wren
+handoff-draft` call creates a session — `crypto.randomUUID()` draftId,
+a SHA-256 hash of the exact final text shown (gloss + deterministic
+draft, so *any* change to either invalidates the binding), the
+requester's Discord user ID, `createdAt`/`expiresAt` (15 minutes by
+default, `config.projectAwareness.draftApprovalTtlMs`), and a status
+(`pending` → `approved` | `rejected` | `expired` | `superseded`). It is
+a plain in-memory `Map` — **no database, no file, no SQLite table, no
+entry in the memory/lore system.** A bot restart clears every session;
+that is acceptable and expected.
+
+**Authorization:** only the original requester or an existing Wren
+admin (`permissionManager.isAdmin`) may approve or reject a draft — an
+unrelated Discord user is always denied, audited as
+`handoff_draft_approval_denied`. There is no natural-language approval
+route: typing "looks good" or "approved" in ordinary chat does nothing:
+only the explicit slash commands call into the store (enforced by a
+regression test that greps the whole `src/` tree for any other caller
+of `approvalStore.approve`/`.reject`).
+
+**Expiration and supersession:** expiry is checked lazily — on access,
+not by a background timer — and a still-pending draft that is not acted
+on within the TTL becomes `expired` and can never be approved. If the
+same requester drafts the same project again while an older draft is
+still `pending`, the old one is marked `superseded` before the new one
+is created; a superseded draft can never be approved, even by its
+original requester. Rejection is terminal: a rejected draft cannot
+later be approved, and regenerating creates a brand-new draft ID rather
+than mutating the old one.
+
+**The SHA-256 hash is internal only** — it is never shown in a Discord
+reply, never logged (audit events carry
+draftId/project/requesterUserId/actorUserId/status metadata, never the
+hash or the draft text itself). It exists purely so "approve draft X"
+unambiguously means "approve this exact text," not "approve whatever
+draft X currently contains" (draft text is immutable once a session is
+created — a new draft always gets a new ID).
+
+**The LLM has zero authority here.** Draft IDs, hashes, expiration,
+requester identity, and every status transition are 100% deterministic
+application code in `handoffApproval.js`. A test confirms that even if
+the local model's gloss text contains language like "this is approved,"
+the resulting draft still sits `pending` until a human uses the actual
+slash command.
+
+**What approval does NOT mean:** it does not mean the repository's
+current `HEAD` was verified — Wren still cannot check git state, and
+the existing staleness disclaimer in the deterministic draft is
+untouched. Approval means only "a specific authorized human reviewed
+and approved this exact piece of text."
+
+Test with `node --test tests/handoffApproval.test.js` (37 tests,
+including a Part T–style local simulation of two Discord users acting
+on the same and different drafts, with fixture TTLs instead of real
+sleeps).
+
 ## What should an AI read first?
 
 1. This file, then `docs/PERSONALITY.md` — who Wren is, before writing

@@ -4,6 +4,7 @@ const ollamaService = require('./ollamaService');
 const { OllamaError } = ollamaService;
 const projectContext = require('./projectContext');
 const { extractProjectFacts } = require('./projectFacts');
+const { sharedStore: approvalStore } = require('./handoffApproval');
 const auditLog = require('../audit/auditLog');
 const logger = require('../utils/logger');
 
@@ -182,9 +183,23 @@ async function handleHandoffDraftRequest({ userId, projectName, agent = 'Wren' }
     }
   }
 
-  const finalText = gloss
+  const bodyText = gloss
     ? `${gloss.trim()}\n\n${deterministicDraft}`
     : `_(local model unavailable — showing the deterministic draft only)_\n\n${deterministicDraft}`;
+
+  // Session creation is deterministic application logic -- it runs on the
+  // FINAL text (gloss + deterministic draft) so that the SHA-256 binding
+  // covers exactly what the human is about to review, regardless of
+  // whether Ollama contributed wording this time. The LLM has no input
+  // into the draftId, the hash, expiration, or anything below this line.
+  const session = approvalStore.createSession({
+    project: context.project,
+    projectPath: context.projectPath,
+    requesterUserId: userId,
+    draftText: bodyText,
+  });
+
+  const finalText = `${bodyText}\n\n${buildApprovalBanner(session)}`;
 
   auditLog.record({
     action: usedOllama ? 'handoff_draft_generated' : 'handoff_draft_fallback',
@@ -194,10 +209,25 @@ async function handleHandoffDraftRequest({ userId, projectName, agent = 'Wren' }
       hasHandoff: Boolean(context.latestHandoff),
       usedOllama,
       truncated: facts.handoffTruncated || facts.entryPointsAnyTruncated,
+      draftId: session.draftId,
     },
   });
 
-  return { status: 'ok', usedOllama, reply: finalText };
+  return { status: 'ok', usedOllama, reply: finalText, draftId: session.draftId };
 }
 
-module.exports = { handleHandoffDraftRequest, buildDeterministicDraft, DRAFT_BANNER, DRAFT_DISCLAIMER };
+/** Text shown alongside every draft -- never includes the SHA-256 hash (Part N). */
+function buildApprovalBanner(session) {
+  return [
+    DRAFT_BANNER,
+    `Draft ID: ${session.draftId}`,
+    `Expires: ${new Date(session.expiresAt).toISOString()}`,
+    '',
+    `Approve: /wren handoff-approve draft-id:${session.draftId}`,
+    `Reject: /wren handoff-reject draft-id:${session.draftId}`,
+    '',
+    'Approval does not persist this handoff. It only records that a human reviewed and approved this exact draft text.',
+  ].join('\n');
+}
+
+module.exports = { handleHandoffDraftRequest, buildDeterministicDraft, buildApprovalBanner, DRAFT_BANNER, DRAFT_DISCLAIMER };
