@@ -1,8 +1,10 @@
 const cooldownManager = require('../managers/cooldownManager');
 const queueManager = require('../managers/queueManager');
 const personalityManager = require('../personality/personalityManager');
-const { generateReply, OllamaError } = require('./ollamaService');
+const ollamaService = require('./ollamaService');
+const { OllamaError } = ollamaService;
 const projectContext = require('./projectContext');
+const { extractProjectFacts } = require('./projectFacts');
 const auditLog = require('../audit/auditLog');
 const logger = require('../utils/logger');
 
@@ -23,13 +25,60 @@ Rules for this specific answer:
 - Do NOT claim you performed any action -- you did not modify, commit, push, or run anything, and you cannot.
 - Do NOT invent project state that isn't in this context. If something isn't covered, say plainly that you don't know rather than guessing.
 - If the context distinguishes verified facts from leads, allegations, possible connections, or unverified claims, PRESERVE that exact distinction -- never restate an allegation or unverified lead as an established fact.
-- Do not offer opinions, rankings, or political conclusions about any person mentioned.`;
+- Do not offer opinions, rankings, or political conclusions about any person mentioned.
+- Speak naturally, not as a rigid checklist, but let your answer be shaped by (where the context actually supports it): what the project is, what happened most recently, whether a handoff exists and when it was created, what's outstanding, what to read first, and whether anything here is truncated or unknown.
+- If the STRUCTURED FACTS block below says "No handoff exists", distinguish PROJECT DOCUMENTATION (what the project is, from its own docs) from RECENT OPERATIONAL STATE (what just happened) explicitly -- say in substance: "No operational handoff is currently available, so I can describe the project from its documentation but cannot reliably tell you where the most recent work session stopped." Never fabricate recent activity from documentation prose.`;
 
-function formatReferenceContext(ctx) {
+/** A compact, labeled summary of projectFacts.js's output -- reduces the model's need to infer structure from raw prose. */
+function formatFactsSummary(facts) {
+  const lines = ['STRUCTURED FACTS', `Project: ${facts.project}`];
+  if (facts.registrySummary) lines.push(`Registry entry: ${facts.registrySummary}`);
+  if (facts.hasHandoff) {
+    lines.push(`Handoff exists: yes (id ${facts.handoffId}, created ${facts.handoffCreatedAt}, agent ${facts.handoffAgent}).`);
+    lines.push(`Recorded commit/branch: ${facts.recordedCommit ?? 'UNKNOWN'} / ${facts.recordedBranch ?? 'UNKNOWN'} (pushed: ${facts.recordedPushed}). Current HEAD not independently verified.`);
+    if (facts.currentStateText) lines.push(`Current state per handoff: ${facts.currentStateText}`);
+    if (facts.outstandingText) lines.push(`Outstanding per handoff: ${facts.outstandingText}`);
+    if (facts.nextActionText) lines.push(`Next recommended action per handoff: ${facts.nextActionText}`);
+    if (facts.handoffTruncated) lines.push('Handoff content was truncated -- some detail may be missing.');
+  } else {
+    lines.push('Handoff exists: no handoff exists for this project yet.');
+  }
+  lines.push(`Read first: ${facts.entryPointNames.join(', ') || 'UNKNOWN'}`);
+  if (facts.entryPointsAnyTruncated) lines.push('One or more entry-point documents were truncated.');
+  return lines.join('\n');
+}
+
+/** Always available, always accurate, never dependent on Ollama being up. */
+function buildDeterministicStatus(facts) {
+  const lines = [`**${facts.project}** — deterministic status (local model unavailable, showing facts directly)`];
+  if (facts.registrySummary) lines.push(`Registry: ${facts.registrySummary}`);
+  if (facts.hasHandoff) {
+    lines.push(`Latest handoff: ${facts.handoffId} (created ${facts.handoffCreatedAt} by ${facts.handoffAgent})`);
+    if (facts.handoffObjective) lines.push(`Objective: ${facts.handoffObjective}`);
+    lines.push(
+      `Recorded commit: ${facts.recordedCommit ?? 'UNKNOWN'} on branch ${facts.recordedBranch ?? 'UNKNOWN'} ` +
+        `(pushed: ${facts.recordedPushed}). Current HEAD not independently verified.`,
+    );
+    if (facts.currentStateText) lines.push(`Current state: ${facts.currentStateText}`);
+    if (facts.outstandingText) lines.push(`Outstanding: ${facts.outstandingText}`);
+    if (facts.nextActionText) lines.push(`Next recommended action: ${facts.nextActionText}`);
+    if (facts.handoffTruncated) lines.push('(Handoff content was truncated -- some detail may be missing.)');
+  } else {
+    lines.push(
+      'No operational handoff is currently available, so this is project documentation only -- I cannot reliably tell you where the most recent work session stopped.',
+    );
+  }
+  lines.push(`Read first: ${facts.entryPointNames.join(', ') || 'UNKNOWN'}`);
+  if (facts.warnings.length) lines.push(`Notes: ${facts.warnings.join(' ')}`);
+  return lines.join('\n');
+}
+
+function formatReferenceContext(ctx, facts = extractProjectFacts(ctx)) {
   const parts = [
     'REFERENCE CONTEXT (read-only project awareness snapshot -- not something you did yourself)',
     `Project: ${ctx.project}`,
     `Project path: ${ctx.projectPath}`,
+    formatFactsSummary(facts),
   ];
 
   if (ctx.registrySummary) {
@@ -121,7 +170,8 @@ async function handleProjectAwarenessRequest({ userId, projectName }) {
     });
   }
 
-  const referenceContext = formatReferenceContext(context);
+  const facts = extractProjectFacts(context);
+  const referenceContext = formatReferenceContext(context, facts);
   const systemPrompt = `${personalityManager.getSystemPrompt()}\n\n${RULES}\n\n${referenceContext}`;
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -132,16 +182,19 @@ async function handleProjectAwarenessRequest({ userId, projectName }) {
   ];
 
   try {
-    const reply = await queueManager.enqueue(() => generateReply(messages));
-    return { status: 'ok', reply };
+    const reply = await queueManager.enqueue(() => ollamaService.generateReply(messages));
+    return { status: 'ok', usedOllama: true, reply };
   } catch (err) {
     if (err instanceof OllamaError) {
-      logger.error('Project awareness AI generation failed', { error: err.message });
-      return { status: 'error', reply: err.friendlyReply };
+      // The local model is a wording layer, not a single point of failure --
+      // fall back to the same facts, formatted deterministically, rather
+      // than a generic "something went wrong" message.
+      logger.warn('Project status: Ollama unavailable, falling back to deterministic status', { error: err.message });
+      return { status: 'ok', usedOllama: false, reply: buildDeterministicStatus(facts) };
     }
     logger.error('Unexpected error generating project awareness reply', { error: err.message, stack: err.stack });
-    return { status: 'error', reply: 'Well, that went sideways. Give me a moment, sugar.' };
+    return { status: 'error', usedOllama: false, reply: 'Well, that went sideways. Give me a moment, sugar.' };
   }
 }
 
-module.exports = { handleProjectAwarenessRequest, formatReferenceContext, RULES };
+module.exports = { handleProjectAwarenessRequest, formatReferenceContext, buildDeterministicStatus, formatFactsSummary, RULES };

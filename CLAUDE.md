@@ -162,8 +162,11 @@ Boundaries worth remembering:
   of this, even if a project name is mentioned in the message — a test
   confirms it. `/wren project <name>` remains the only trigger; natural-
   language routing was deliberately deferred, not built.
-- Test with `node --test tests/*.test.js` (49 tests), or exercise it
-  live via `/wren project WhisperOS` in Discord.
+- Test with `node --test tests/*.test.js` (72 tests as of Phase 12), or
+  exercise it live via `/wren project WhisperOS` in Discord.
+- **`/wren project` now falls back deterministically if Ollama is down**
+  (Phase 12) — see "Deterministic fallback" below. The local model is a
+  wording layer, never a single point of failure for basic status.
 
 **Known gap (found Phase 10, fixed Phase 11):** `config.json`'s
 `ai.model` was `llama3.1:latest`, but only `llama3.1:8b` was pulled in
@@ -173,6 +176,52 @@ just project awareness. Corrected 2026-09-15 by pointing `ai.model` (and
 `llama3.1:8b`, rather than pulling a redundant second model. Verified
 directly: real `generateReply()` calls now succeed, for both ordinary
 chat and project awareness, across all 9 enabled projects.
+
+## Handoff drafting (Phase 12) — text only, never persisted
+
+`/wren handoff-draft <name>` produces a **text-only draft** shaped like
+the shared handoff contract (`Agent`/`Project`/`Project Path`/
+`Objective`, then `## Completed` through `## Notes`) for any catalog-
+enabled project. **Every response is labeled `DRAFT ONLY — NOT SAVED`
+at the top and bottom, plus an explicit "Wren did not modify the project
+or WhisperCommandCenter" line** — this is generated for a human to read
+and, if they choose, use as a starting point for a real handoff written
+through the normal tooling (`create-handoff.py`). Wren has **zero**
+handoff-write authority: she never writes a file, never touches
+`handoffs/index.json`, never calls `create-handoff.py`, never commits
+anything.
+
+**How it stays honest without an LLM in the trust path:** fact
+extraction and wording are deliberately separate (`src/services/
+projectFacts.js` → `src/services/handoffDraft.js`). The structured draft
+(every field) is built **deterministically** from the same facts
+`/wren project` uses — the local model is never asked to reproduce that
+structure itself (an LLM can't be trusted to keep exact markers like
+`DRAFT ONLY — NOT SAVED` or `UNKNOWN` verbatim across a long
+generation). The model is only ever asked for a short (3-5 sentence)
+narrative paragraph summarizing the same facts, which is prepended to
+the deterministic draft. If a project has no handoff yet, every field
+that would depend on operational history reads `UNKNOWN`, `NOT
+VERIFIED`, or `NO CURRENT HANDOFF` — never a guess dressed up as recent
+activity. `## Git State` never claims current `HEAD` was verified; it
+only ever repeats what a handoff recorded, with an explicit "not
+independently verified" line.
+
+**Deterministic fallback (Part N, both commands):** if Ollama is
+unavailable, `/wren project` returns `buildDeterministicStatus()` and
+`/wren handoff-draft` returns the deterministic draft with a "local
+model unavailable" note prepended — both fully accurate, neither
+depends on a live model. Verified directly by monkey-patching
+`ollamaService.generateReply` to throw in tests, and confirmed the
+normal happy path is unaffected.
+
+**Discord message limits:** a draft can be long. `src/utils/
+chunkedReply.js` caps the overall response at ~6000 characters
+(truncating with an explicit note if exceeded, never silently) and
+labels multi-message responses `**(part N/M)**` in order.
+
+Test with `node --test tests/handoffDraft.test.js tests/chunkedReply.test.js`,
+or live via `/wren handoff-draft WhisperOS` in Discord.
 
 ## What should an AI read first?
 
@@ -220,10 +269,17 @@ chat and project awareness, across all 9 enabled projects.
   `src/managers/` convention (see `AI/context/DECISIONS.md`).
 - Project awareness (`src/services/projectContext.js`) must stay
   read-only by construction: no shell execution, no arbitrary filesystem
-  access, no writes, no new entry beyond the hardcoded allowlist without
-  a deliberate code change. Don't loosen any of these to make a future
-  feature request more convenient — that safety review was the point of
-  Phase 10.
+  access, no writes, no new entry beyond the catalog without a
+  deliberate, reviewed edit to `projectCatalog.json`. Don't loosen any of
+  these to make a future feature request more convenient — that safety
+  review was the point of Phase 10.
+- Handoff drafting (`src/services/handoffDraft.js`) generates TEXT ONLY.
+  It must never gain the ability to write a file, edit
+  `WhisperCommandCenter/handoffs/index.json`, call `create-handoff.py`,
+  or run any git command. "Wren can produce good draft text" is not by
+  itself a reason to grant write access later — that remains a separate,
+  explicit decision (see `docs/CHANGELOG.md`'s Phase 12 entry for what
+  evidence that decision would need).
 
 ## Related durable cross-project knowledge
 

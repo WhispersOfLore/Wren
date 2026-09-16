@@ -2,6 +2,69 @@
 
 All notable changes to Wren are documented here.
 
+## [0.7.0] - 2026-09-15 — Project Intelligence + Handoff Drafting (Phase 12)
+
+Two new read-only capabilities on top of Phase 10/11's project awareness.
+No handoff-write authority was granted -- this phase evaluates whether
+Wren can produce useful draft text, nothing more.
+
+- **`src/services/projectFacts.js` (new):** deterministic fact
+  extraction, separate from LLM wording as required. Parses a handoff's
+  `## Heading` Markdown sections into a flat facts object
+  (`hasHandoff`, `completedText`, `outstandingText`, `recordedCommit`,
+  etc.) -- pure string processing, no filesystem access, no LLM call.
+  This is now the single source both `/wren project` and the new
+  `/wren handoff-draft` draw from.
+- **`/wren project` enriched:** now includes a labeled STRUCTURED FACTS
+  summary in the model prompt, and explicit rules requiring the model to
+  distinguish PROJECT DOCUMENTATION from RECENT OPERATIONAL STATE when
+  no handoff exists ("No operational handoff is currently available, so
+  I can describe the project from its documentation but cannot reliably
+  tell you where the most recent work session stopped").
+- **`/wren handoff-draft <name>` (new):** produces a TEXT-ONLY draft
+  shaped like the shared handoff contract. Every response is labeled
+  `DRAFT ONLY — NOT SAVED` at both the top and bottom, plus an explicit
+  "Wren did not modify the project or WhisperCommandCenter" line. The
+  full structured draft is built **deterministically** in
+  `src/services/handoffDraft.js`'s `buildDeterministicDraft()` --
+  `UNKNOWN`/`NOT VERIFIED`/`NO CURRENT HANDOFF` markers are used
+  wherever a fact isn't available, and `## Git State` never claims
+  current HEAD was verified. The local model is only ever asked for one
+  short narrative paragraph prepended to that deterministic text, under
+  rules forbidding new facts, action claims, or evidence-status
+  upgrades.
+- **Deterministic fallback (both commands):** if Ollama is unavailable,
+  `/wren project` returns `buildDeterministicStatus()` and
+  `/wren handoff-draft` returns the deterministic draft with a "local
+  model unavailable" note -- neither depends on a live model for basic
+  usefulness. Verified by monkey-patching `ollamaService.generateReply`
+  to throw (both services now call it through the `ollamaService`
+  namespace specifically so this is possible without stopping the real
+  local Ollama instance).
+- **`src/utils/chunkedReply.js` (new):** caps a response at ~6000
+  characters (explicit truncation note if exceeded) and labels
+  multi-message responses `**(part N/M)**`, applied to the new
+  handoff-draft handler.
+- New audit events: `handoff_draft_requested/generated/fallback/denied`
+  -- metadata only, never document content.
+- 23 new tests (72 total, up from 49): project status with/without a
+  handoff, draft with/without a handoff, the `DRAFT ONLY` banner always
+  present, HEAD never falsely claimed verified, `UNKNOWN` markers used
+  correctly, ClayMoneyTrail's real handoff text reproduced verbatim (not
+  paraphrased) with no evidence-status upgrades, unknown/retired-AboutIt
+  denial for the new command, both deterministic fallbacks, Discord
+  chunking and max-size enforcement, audit metadata contains no document
+  content, ordinary chat still unaffected.
+- Live-tested against the real local Ollama instance for `WhisperOS`,
+  `GamingUnfiltered`, `ClayMoneyTrail`, and `WhisperBot` -- both
+  `/wren project` and `/wren handoff-draft` -- see this phase's report
+  for results.
+
+**Still zero handoff-write authority.** Wren cannot write a file, edit
+`handoffs/index.json`, call `create-handoff.py`, or run any git command.
+Generating good draft text is not, by itself, authorization to persist
+it -- that remains a separate, later decision.
+
 ## [0.6.1] - 2026-09-15 — Live Project Awareness + Safe Expansion (Phase 11)
 
 - **Fixed the Ollama model mismatch** flagged at the end of Phase 10:

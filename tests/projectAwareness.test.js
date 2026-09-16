@@ -4,9 +4,17 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 const auditLog = require('../src/audit/auditLog');
+const ollamaService = require('../src/services/ollamaService');
 const projectContext = require('../src/services/projectContext');
 const conversationManager = require('../src/managers/conversationManager');
-const { handleProjectAwarenessRequest, formatReferenceContext, RULES } = require('../src/services/projectAwareness');
+const {
+  handleProjectAwarenessRequest,
+  formatReferenceContext,
+  buildDeterministicStatus,
+  formatFactsSummary,
+  RULES,
+} = require('../src/services/projectAwareness');
+const { extractProjectFacts } = require('../src/services/projectFacts');
 
 function nextAuditEvent() {
   return new Promise((resolve) => auditLog.once('audit', resolve));
@@ -92,4 +100,72 @@ test('a denied request never calls the Ollama service (no network attempted)', a
   const elapsedMs = Date.now() - start;
   assert.equal(result.status, 'denied');
   assert.ok(elapsedMs < 1000, 'denial should be near-instant, with no network call attempted');
+});
+
+// =====================================================================
+// Phase 12: structured facts, deterministic status, Ollama fallback
+// =====================================================================
+
+// --- 1: project status with handoff ---
+
+test('formatFactsSummary reports a real handoff for WhisperOS accurately', () => {
+  const ctx = projectContext.getProjectContext('WhisperOS');
+  const facts = extractProjectFacts(ctx);
+  assert.equal(facts.hasHandoff, true);
+  const summary = formatFactsSummary(facts);
+  assert.match(summary, /Handoff exists: yes/);
+  assert.match(summary, new RegExp(facts.handoffId));
+});
+
+// --- 2: project status without handoff ---
+
+test('formatFactsSummary distinguishes documentation-only projects plainly', () => {
+  const ctx = projectContext.getProjectContext('WhisperBot');
+  const facts = extractProjectFacts(ctx);
+  assert.equal(facts.hasHandoff, false);
+  const summary = formatFactsSummary(facts);
+  assert.match(summary, /Handoff exists: no handoff exists for this project yet\./);
+});
+
+test('buildDeterministicStatus for a no-handoff project states the documentation/recent-state distinction explicitly', () => {
+  const ctx = projectContext.getProjectContext('WhisperSMP');
+  const facts = extractProjectFacts(ctx);
+  const status = buildDeterministicStatus(facts);
+  assert.match(status, /No operational handoff is currently available/);
+  assert.match(status, /cannot reliably tell you where the most recent work session stopped/);
+});
+
+// --- 15: project status falls back deterministically when Ollama is down ---
+
+test('project status falls back to deterministic text when Ollama is unavailable', async (t) => {
+  const original = ollamaService.generateReply;
+  ollamaService.generateReply = async () => {
+    throw new ollamaService.OllamaError('simulated Ollama outage', { friendlyReply: 'down' });
+  };
+  t.after(() => {
+    ollamaService.generateReply = original;
+  });
+
+  const result = await handleProjectAwarenessRequest({ userId: 'status-fallback-test', projectName: 'ClayMoneyTrail' });
+  assert.equal(result.status, 'ok');
+  assert.equal(result.usedOllama, false);
+  assert.match(result.reply, /deterministic status/i);
+});
+
+test('a real (non-mocked) Ollama success still returns usedOllama: true', async () => {
+  // Sanity check that the happy path's new usedOllama field doesn't
+  // silently flip to false when Ollama is actually reachable -- exercised
+  // against a fixture-shaped context, not a real network call, since
+  // whether a real Ollama instance is running in CI is not guaranteed.
+  const original = ollamaService.generateReply;
+  ollamaService.generateReply = async () => 'a real-looking reply';
+  const restore = () => { ollamaService.generateReply = original; };
+  try {
+    const result = await handleProjectAwarenessRequest({ userId: 'status-ok-test', projectName: 'WhisperContent' });
+    assert.equal(result.status, 'ok');
+    assert.equal(result.usedOllama, true);
+    assert.equal(result.reply, 'a real-looking reply');
+  } finally {
+    restore();
+  }
 });

@@ -562,6 +562,63 @@ See `Wren/CLAUDE.md`'s "Read-only project awareness" section for the
 user-facing summary and known gaps; `tests/projectContext.test.js` and
 `tests/projectAwareness.test.js` for the safety-property test suite.
 
+## Project intelligence: status + handoff drafting (Phase 12)
+
+Two new layers sit on top of `projectContext.js` without adding any new
+filesystem access:
+
+- **`src/services/projectFacts.js`** — pure fact extraction. Turns a
+  `getProjectContext()` result into a flat object (`hasHandoff`,
+  `completedText`, `outstandingText`, `recordedCommit`, etc.) by parsing
+  the handoff Markdown's own `## Heading` sections (string processing
+  only -- no filesystem access, no LLM). This is the single source both
+  `/wren project` and `/wren handoff-draft` draw from, so there's exactly
+  one place that decides what a "fact" is.
+- **`src/services/handoffDraft.js`** — builds the handoff-draft response.
+  `buildDeterministicDraft()` fills every field of the shared handoff
+  contract (`Agent` through `Notes`) directly from `projectFacts.js`'s
+  output, using `UNKNOWN`/`NOT VERIFIED`/`NO CURRENT HANDOFF` markers
+  wherever a fact isn't available -- this function alone, with no model
+  involved, is what guarantees the `DRAFT ONLY — NOT SAVED` banner and
+  the "HEAD not independently verified" language are always present.
+  Only *after* that deterministic text exists does `handleHandoffDraftRequest()`
+  optionally ask the local model for one short narrative paragraph
+  (`GLOSS_RULES` forbids adding facts, claiming actions, or upgrading
+  evidence-status language) to prepend -- if that call fails or Ollama is
+  down, the deterministic draft is returned alone, unaffected.
+
+**`/wren project` gained the same fallback**: `projectAwareness.js` now
+calls `projectFacts.extractProjectFacts()` too (for a `formatFactsSummary()`
+block prepended to the existing REFERENCE CONTEXT, and reused as the
+input to `buildDeterministicStatus()`). On an `OllamaError`, it returns
+that deterministic status instead of the old generic "something went
+wrong" message -- the local model is a wording layer, not a dependency
+for basic orientation.
+
+**Testability note:** both services call `ollamaService.generateReply`
+through the `ollamaService` namespace object rather than a destructured
+reference, specifically so tests can monkey-patch
+`ollamaService.generateReply` for the duration of one test (with
+`t.after()` cleanup) to simulate an outage realistically, without
+stopping the real local Ollama service or adding a mocking framework.
+
+**Chunking (`src/utils/chunkedReply.js`):** caps a response at ~6000
+characters total (explicit truncation note if exceeded) and, only when
+more than one Discord message is needed, prefixes each with
+`**(part N/M)**` so continuation is unambiguous. Applied to
+`handoffDraftHandler.js` only -- `/wren project` replies are normally
+short enough not to need it, and reusing the existing `replyToInteraction`
+path there avoids touching an already-tested path unnecessarily.
+
+**Audit events added:** `handoff_draft_requested`, `handoff_draft_generated`,
+`handoff_draft_fallback` (Ollama was down), `handoff_draft_denied` --
+same `auditLog` pub/sub, same rule as every other event here: metadata
+only (project name, handoff id if any, whether Ollama was used,
+truncation flag), never document content.
+
+See `tests/handoffDraft.test.js`, `tests/chunkedReply.test.js`, and the
+Phase 12 additions to `tests/projectAwareness.test.js`.
+
 ## Future expansion
 
 > Note: the roadmap has been renumbered twice — Phase 2 became the Identity

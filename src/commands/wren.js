@@ -5,6 +5,7 @@ const { buildMemoryPanel } = require('../control/memoryPanel');
 const { buildLorePanel } = require('../control/lorePanel');
 const { handleAsk } = require('../interactions/slashHandler');
 const { handleProject } = require('../interactions/projectHandler');
+const { handleHandoffDraft } = require('../interactions/handoffDraftHandler');
 const playerManager = require('../memory/playerManager');
 const { ephemeral } = require('../utils/discordReply');
 const { listAllowedProjects } = require('../services/projectContext');
@@ -49,6 +50,18 @@ module.exports = {
       sub
         .setName('project')
         .setDescription("Ask Wren what's happening with a project (read-only)")
+        .addStringOption((opt) =>
+          opt
+            .setName('name')
+            .setDescription('Which project?')
+            .setRequired(true)
+            .addChoices(...listAllowedProjects().map((name) => ({ name, value: name }))),
+        ),
+    )
+    .addSubcommand((sub) =>
+      sub
+        .setName('handoff-draft')
+        .setDescription('Draft a text-only handoff summary for a project (never saved)')
         .addStringOption((opt) =>
           opt
             .setName('name')
@@ -101,6 +114,11 @@ module.exports = {
 
     if (sub === 'project') {
       await handleProject(interaction);
+      return;
+    }
+
+    if (sub === 'handoff-draft') {
+      await handleHandoffDraft(interaction);
     }
   },
 };
