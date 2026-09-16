@@ -1,9 +1,21 @@
 const { run, get, all } = require('../memory/database');
 const { tokenize } = require('../memory/searchUtils');
 const auditLog = require('../audit/auditLog');
+const config = require('../config/configManager');
 
-const CATEGORIES = ['kingdom', 'location', 'npc', 'history', 'event', 'rules'];
+// Rewritten Phase 17 (Part K): 'kingdom'/'npc' were WhisperSMP-specific.
+// The mechanism (CRUD + search) is unchanged and fully generic --
+// preserved as-is; only this vocabulary moved to the new community
+// domain.
+const CATEGORIES = ['community', 'organization', 'history', 'event', 'reference'];
 const DEFAULT_IMPORTANCE = 3;
+
+// See memoryManager.js's identical VISIBILITIES/VERIFICATION_STATUSES for
+// the full rationale -- 'internal' is the safe default, verificationStatus
+// is optional and civic-specific.
+const VISIBILITIES = ['internal', 'public'];
+const DEFAULT_VISIBILITY = 'internal';
+const VERIFICATION_STATUSES = ['verified_fact', 'allegation', 'unverified_lead', 'hypothesis', 'rejected', 'deprecated'];
 
 function isValidCategory(value) {
   return CATEGORIES.includes(value);
@@ -13,16 +25,28 @@ function isValidImportance(value) {
   return Number.isInteger(value) && value >= 1 && value <= 5;
 }
 
+function isValidVisibility(value) {
+  return VISIBILITIES.includes(value);
+}
+
+function isValidVerificationStatus(value) {
+  return value == null || VERIFICATION_STATUSES.includes(value);
+}
+
 /**
- * @param {{ category: string, title: string, content: string, importance?: number, createdBy: string }} params
+ * @param {{ category: string, title: string, content: string, importance?: number, visibility?: string, verificationStatus?: string|null, createdBy: string }} params
  */
-async function addLore({ category, title, content, importance, createdBy }) {
+async function addLore({ category, title, content, importance, visibility, verificationStatus, createdBy }) {
   const resolvedCategory = isValidCategory(category) ? category : 'history';
   const resolvedImportance = isValidImportance(importance) ? importance : DEFAULT_IMPORTANCE;
+  const resolvedVisibility = isValidVisibility(visibility) ? visibility : DEFAULT_VISIBILITY;
+  const resolvedVerificationStatus = isValidVerificationStatus(verificationStatus) ? verificationStatus : null;
 
+  // Phase 17 guild isolation: same automatic stamping as memoryManager.js's addMemory().
   const result = await run(
-    'INSERT INTO lore (category, title, content, importance, created_by) VALUES (?, ?, ?, ?, ?)',
-    [resolvedCategory, title, content, resolvedImportance, createdBy],
+    `INSERT INTO lore (category, title, content, importance, created_by, guild_id, visibility, verification_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [resolvedCategory, title, content, resolvedImportance, createdBy, config.discord.guildId, resolvedVisibility, resolvedVerificationStatus],
   );
 
   auditLog.record({
@@ -117,8 +141,12 @@ async function getLoreCount() {
 
 module.exports = {
   CATEGORIES,
+  VISIBILITIES,
+  VERIFICATION_STATUSES,
   isValidCategory,
   isValidImportance,
+  isValidVisibility,
+  isValidVerificationStatus,
   addLore,
   getLoreById,
   updateLore,

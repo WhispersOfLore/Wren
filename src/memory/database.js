@@ -21,23 +21,27 @@ const db = new sqlite3.Database(DB_PATH, (err) => {
  * already existed from Phase 3) without a migration framework — additive,
  * idempotent, safe to run on every startup. Must be called from inside
  * db.serialize() to stay ordered relative to the CREATE TABLE statements.
+ *
+ * Runs `ALTER TABLE ... ADD COLUMN` directly and swallows the specific
+ * "duplicate column name" error SQLite raises when it already exists,
+ * rather than checking first via an async `PRAGMA table_info` query. The
+ * check-first approach was tried during Phase 17 and caused a real race:
+ * `db.all(PRAGMA...)`'s callback (and the ALTER it queues) fires only
+ * after the synchronous portion of this db.serialize() block has already
+ * finished submitting every other statement -- including later queries
+ * from other modules that reference the new column -- so those could run
+ * before the column existed. Queuing the ALTER directly, synchronously,
+ * in this block preserves correct ordering the same way every other
+ * statement here does.
  */
 function ensureColumn(table, column, definitionSql) {
-  db.all(`PRAGMA table_info(${table})`, [], (err, rows) => {
-    if (err) {
-      logger.error(`Failed to inspect schema for ${table}`, { error: err.message });
+  db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definitionSql}`, (err) => {
+    if (!err) {
+      logger.info(`Migrated schema: added ${table}.${column}`);
       return;
     }
-
-    if (rows.some((row) => row.name === column)) return;
-
-    db.run(`ALTER TABLE ${table} ADD COLUMN ${column} ${definitionSql}`, (alterErr) => {
-      if (alterErr) {
-        logger.error(`Failed to add column ${table}.${column}`, { error: alterErr.message });
-      } else {
-        logger.info(`Migrated schema: added ${table}.${column}`);
-      }
-    });
+    if (/duplicate column name/i.test(err.message)) return; // already migrated -- expected on every subsequent startup
+    logger.error(`Failed to add column ${table}.${column}`, { error: err.message });
   });
 }
 
@@ -88,6 +92,40 @@ db.serialize(() => {
     created_by TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   )`);
+
+  // Phase 17 (Wren Rebirth) guild isolation: `guild_id` is nullable and
+  // additive, exactly like `source` above -- every row written before this
+  // migration (all of it from the old WhisperSMP guild) gets `guild_id =
+  // NULL`, never retroactively guessed or backfilled. memoryRetriever.js
+  // only ever returns rows matching the CURRENT configured guild, so NULL
+  // rows structurally cannot surface in the new community guild's
+  // conversations -- without deleting a single row. See
+  // docs/ARCHITECTURE.md's memory-isolation section for the full
+  // migration-implications writeup.
+  // No index on guild_id: ensureColumn()'s ALTER TABLE runs inside an
+  // async PRAGMA callback, so a CREATE INDEX statement queued directly in
+  // this synchronous serialize() block could run before the column
+  // exists (confirmed as a real failure during Phase 17 development).
+  // Not worth restructuring ensureColumn for an index a local, single-user
+  // SQLite database doesn't meaningfully need yet.
+  ensureColumn('memories', 'guild_id', 'TEXT');
+  ensureColumn('lore', 'guild_id', 'TEXT');
+
+  // Phase 17 civic-safety / public-knowledge boundary (Part H/M/N).
+  // `visibility` ('internal' default, 'public' opt-in) gates what
+  // memoryRetriever.js's public conversational path (mentions, /wren ask)
+  // may surface -- everything defaults to internal, so nothing becomes
+  // public as a side effect of this migration; an admin must explicitly
+  // mark something public later. `verification_status` is optional and
+  // civic-specific (verified_fact / allegation / unverified_lead /
+  // hypothesis / etc., matching ClayMoneyTrail/Cthrew's own vocabulary) --
+  // left NULL for ordinary, non-civic memories where the concept doesn't
+  // apply. Neither column is populated by this migration; no content is
+  // bulk-published or reclassified.
+  ensureColumn('memories', 'visibility', `TEXT NOT NULL DEFAULT 'internal'`);
+  ensureColumn('memories', 'verification_status', 'TEXT');
+  ensureColumn('lore', 'visibility', `TEXT NOT NULL DEFAULT 'internal'`);
+  ensureColumn('lore', 'verification_status', 'TEXT');
 
   db.run('CREATE INDEX IF NOT EXISTS idx_memories_user_id ON memories(user_id)');
   db.run('CREATE INDEX IF NOT EXISTS idx_memories_importance ON memories(importance)');

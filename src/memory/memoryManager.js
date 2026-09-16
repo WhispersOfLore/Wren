@@ -2,6 +2,7 @@ const { run, get, all } = require('./database');
 const { tokenize } = require('./searchUtils');
 const playerManager = require('./playerManager');
 const auditLog = require('../audit/auditLog');
+const config = require('../config/configManager');
 
 const CATEGORIES = ['personal', 'achievement', 'relationship', 'event', 'server'];
 const DEFAULT_CATEGORY = 'personal';
@@ -21,6 +22,22 @@ const IMPORTANCE_LABELS = {
 const SOURCES = ['canonical', 'observation'];
 const DEFAULT_SOURCE = 'canonical';
 
+// Phase 17 (Part H): 'internal' is the safe default for every memory --
+// nothing is public unless an admin explicitly opts it in later. Not
+// exposed in the current /wren memory modal (out of scope for this
+// phase); the field and its enforcement exist so that work can land
+// later without another schema change.
+const VISIBILITIES = ['internal', 'public'];
+const DEFAULT_VISIBILITY = 'internal';
+
+// Civic-specific vocabulary matching ClayMoneyTrail/Cthrew's own
+// verification-status model -- optional, left null for ordinary
+// non-civic memories where the concept doesn't apply. Never set to
+// 'verified_fact' by anything other than an explicit admin action; the
+// LLM has no path to writing this field at all (see ai/personality.js's
+// CIVIC RESEARCH EVIDENCE RULE).
+const VERIFICATION_STATUSES = ['verified_fact', 'allegation', 'unverified_lead', 'hypothesis', 'rejected', 'deprecated'];
+
 function isValidImportance(value) {
   return Number.isInteger(value) && value >= 1 && value <= 5;
 }
@@ -33,18 +50,32 @@ function isValidSource(value) {
   return SOURCES.includes(value);
 }
 
+function isValidVisibility(value) {
+  return VISIBILITIES.includes(value);
+}
+
+function isValidVerificationStatus(value) {
+  return value == null || VERIFICATION_STATUSES.includes(value);
+}
+
 /**
- * @param {{ discordId: string, category?: string, content: string, importance?: number, source?: string, createdBy: string }} params
+ * @param {{ discordId: string, category?: string, content: string, importance?: number, source?: string, visibility?: string, verificationStatus?: string|null, createdBy: string }} params
  */
-async function addMemory({ discordId, category, content, importance, source, createdBy }) {
+async function addMemory({ discordId, category, content, importance, source, visibility, verificationStatus, createdBy }) {
   const resolvedCategory = isValidCategory(category) ? category : DEFAULT_CATEGORY;
   const resolvedImportance = isValidImportance(importance) ? importance : 3;
   const resolvedSource = isValidSource(source) ? source : DEFAULT_SOURCE;
+  const resolvedVisibility = isValidVisibility(visibility) ? visibility : DEFAULT_VISIBILITY;
+  const resolvedVerificationStatus = isValidVerificationStatus(verificationStatus) ? verificationStatus : null;
 
+  // Phase 17 guild isolation: every NEW memory is stamped with the current
+  // configured guild automatically -- never caller-supplied, so there is
+  // no code path that can write a memory tagged for a different guild.
   const userId = await playerManager.ensureUser(discordId);
   const result = await run(
-    'INSERT INTO memories (user_id, category, content, importance, source, created_by) VALUES (?, ?, ?, ?, ?, ?)',
-    [userId, resolvedCategory, content, resolvedImportance, resolvedSource, createdBy],
+    `INSERT INTO memories (user_id, category, content, importance, source, created_by, guild_id, visibility, verification_status)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [userId, resolvedCategory, content, resolvedImportance, resolvedSource, createdBy, config.discord.guildId, resolvedVisibility, resolvedVerificationStatus],
   );
 
   auditLog.record({
@@ -163,9 +194,13 @@ module.exports = {
   CATEGORIES,
   IMPORTANCE_LABELS,
   SOURCES,
+  VISIBILITIES,
+  VERIFICATION_STATUSES,
   isValidCategory,
   isValidImportance,
   isValidSource,
+  isValidVisibility,
+  isValidVerificationStatus,
   addMemory,
   getMemoryById,
   updateMemory,

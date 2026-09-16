@@ -1,44 +1,39 @@
 # CLAUDE.md — Wren
 
-Added 2026-09-15. `~/Projects/AI/CLAUDE.md` and `AI/context/PROJECTS.md`
-have cited `Wren/CLAUDE.md` as this project's agent entry point since
-2026-08-02, but the file did not actually exist at this root until now —
-a documentation gap, closed by this file.
+Added 2026-09-15. Rewritten 2026-09-16 (Phase 17, "Wren Rebirth") to
+reflect Wren's new identity and domain — see "Wren Rebirth" below for
+the full migration record.
 
 ## What is this project?
 
-A local, AI-powered Discord companion for WhisperSMP: "conversation,
-companionship, and entertainment," explicitly not utility, automation, or
-economy — that's `WhisperBot`'s job (per `README.md`). Runs entirely on
-local infrastructure: message generation goes through a local
-[Ollama](https://ollama.com) instance running `llama3.1:8b` (corrected
-2026-09-15, Phase 11 — see "Known gap" below) — no cloud AI APIs, no
-OpenAI.
+A local, AI-powered **community and research assistant for Whisper About
+It / Unfiltered Talk Radio** — a Discord community distinct from
+WhisperSMP (Wren's original, now-retired-from-default domain; WhisperSMP
+remains its own separate gaming ecosystem, just no longer Wren's
+default). Runs entirely on local infrastructure: message generation goes
+through a local [Ollama](https://ollama.com) instance running
+`llama3.1:8b` — no cloud AI APIs, no OpenAI.
 
-**Note on git history:** this repository's entire history is a single
-commit (`Initial Wren bot setup`). Everything below was verified by
-reading the actual `src/` tree and `docs/CHANGELOG.md`, not inferred from
-commit-by-commit history — there isn't one to inspect.
+**Note on git history:** as of Phase 17 this repository has 8 commits
+(Phases 10 through 17 of this project's own numbering; a single-commit
+history was true only up through early Phase 10). `docs/CHANGELOG.md`
+is the authoritative phase-by-phase record.
 
 ## What does it currently do?
 
 Verified by directly inspecting `src/` (not just reading docs) — the
 directory contains `ai/`, `audit/`, `commands/`, `config/`, `control/`,
 `events/`, `interactions/`, `lore/`, `managers/`, `memory/`, `mood/`,
-`personality/` (+ `profiles/`), `services/`, `utils/`. Specific files
-confirmed present: `memory/memoryManager.js`, `memory/memoryRetriever.js`,
-`memory/playerManager.js`, `audit/auditLog.js`, `personality/
-personalityManager.js` — these match `docs/CHANGELOG.md`'s own
-"[0.4.0] Phase 3: Memory & Knowledge System" and "[0.5.0] Stabilization
-Sprint" (single-instance protection, structured audit logging,
-`playerManager`/`memoryManager` split) entries. The code substance is
-real; treat the sequential "Phase 1/2/3" framing and its embedded dates
-as this project's own narrative record, not something independently
-git-verified (see `AI/VISION.md`'s documentation-trustworthiness note —
-the same caveat applies here as to WhisperBot's dated docs).
+`personality/` (+ `profiles/`), `services/`, `utils/`. A full read-only
+project-awareness + human-approved handoff-drafting + persistence-dry-run
+architecture (Phases 10-14), a transient handoff-approval layer (Phase
+13), a repository-state drift guard (Phase 14), and — as of Phase 17 — a
+guild-scoped memory/lore system with an explicit public/internal
+visibility boundary and civic verification-status preservation. See the
+phase-numbered sections below for each.
 
-**No automated test suite** — `package.json`'s `test` script is a
-placeholder.
+**204 automated tests** as of Phase 17 (`node --test tests/*.test.js`) —
+`package.json`'s `test` script runs the real suite, not a placeholder.
 
 ## What is authoritative?
 
@@ -398,6 +393,141 @@ tests/handoffPersistencePlan.test.js` (52 tests), including real
 read-only snapshots of `WhisperOS`/`GamingUnfiltered`/`ClayMoneyTrail`
 and drift scenarios run only against disposable fixture repos under
 the OS temp directory — never against a real project.
+
+## Wren Rebirth (Phase 17) — new mission, new guild, public/admin boundary
+
+Wren was rebuilt for a new role without a rewrite: inspection confirmed
+the existing architecture (project awareness, handoff drafting/approval,
+audit, permissions, Ollama integration, Discord plumbing) was generic
+enough to carry forward unchanged — only identity text, catalog
+membership, a few command surfaces, and the memory schema needed to
+change.
+
+**New identity.** Wren is now "the AI community and research assistant
+for Whisper About It / Unfiltered Talk Radio" (`src/ai/personality.js`'s
+`BASE_IDENTITY`) — not a WhisperSMP character, Minecraft lore bot, or
+gaming assistant. She still isn't sterile: the VOICE/personality/mood
+layers are untouched, still generic, still hers. WhisperSMP remains its
+own separate gaming ecosystem; it is not absorbed into the new domain,
+merely no longer Wren's default.
+
+**New guild — the actual safety boundary.** `DISCORD_GUILD_ID` is now
+**required** (`configManager.js` throws at startup without it, matching
+`DISCORD_TOKEN`'s existing requirement) and is the target Whisper About
+It / Unfiltered Talk Radio guild: `1549772221226950686`. `src/utils/
+guildGuard.js`'s `isAllowedGuild()` is checked in both
+`events/messageCreate.js` (ordinary messages) and `events/
+interactionCreate.js` (every slash command, button, and modal) — a
+message or interaction from any other guild is silently ignored, never
+answered. The previously **committed** `config.json` channel ID
+(`1478108084340785358`, the old gaming channel) is gone; `discord.
+channelId` is now optional and env-only (`DISCORD_CHANNEL_ID`), used
+only as an *additional* restriction on admin/ops commands, never as
+Wren's only safety boundary. Public conversation (mentions, `/wren ask`)
+is guild-scoped, not channel-scoped — a community assistant needs to
+work across more than one channel.
+
+**Public/admin authorization boundary (the critical fix).** Before Phase
+17, `/wren project` and every `/wren handoff-*` command were gated only
+by the optional channel restriction — any member present in that one
+channel could run them, not just an admin. `src/utils/adminGate.js`'s
+`denyUnlessAdminOps()` now gates all five of `project`/`handoff-draft`/
+`handoff-approve`/`handoff-reject`/`handoff-plan` on
+`permissionManager.isAdmin()` first (channel restriction, if configured,
+applies on top). This does **not** weaken handoff-approve/reject/plan's
+own internal Phase-13/14 requester-or-admin logic — since only an admin
+can ever create a draft now, every legitimate requester is already an
+admin by construction. `/wren link` (Minecraft account linking, fully
+public, no gating) was removed from the command surface entirely —
+`playerManager.linkPlayer()` still exists in case old linked-account data
+is ever needed, it's just unreferenced by any command now.
+
+**Civic research safety model.** `BASE_IDENTITY` gained an explicit CIVIC
+RESEARCH EVIDENCE RULE: never upgrade "an allegation that X happened"
+into "X happened" — the model never decides something became verified.
+The memory/lore schema gained two additive, nullable columns:
+`visibility` (`'internal'` default, `'public'` opt-in — nothing is
+public unless an admin explicitly sets it) and `verification_status`
+(civic vocabulary: `verified_fact` / `allegation` / `unverified_lead` /
+`hypothesis` / `rejected` / `deprecated` — optional, `NULL` for ordinary
+non-civic memories where the concept doesn't apply). `memoryRetriever.js`
+— Wren's **only** public conversational retrieval path — filters to
+`visibility = 'public'` in SQL; nothing else reaches an ordinary
+conversation. No content was bulk-published to make this true: the
+boundary exists, but nothing has been marked public yet. Neither
+`addMemory()` nor `addLore()` is ever called with model output for
+`verificationStatus` — it's an explicit, deterministic, admin-only
+parameter, structurally unreachable from `responder.js`'s conversational
+path.
+
+**Project catalog restructure.** `projectCatalog.json`'s gaming-facing
+entries (`WhisperSMP`, `WhisperBot`, `GamingUnfiltered`, `BroBeHonest`,
+`WhisperContent`, `WhatIfSeries`) and `WhisperOS` (not gaming, but not
+evidenced to support the new role either) are now `enabled: false` —
+disabled, not deleted; every one of those projects is untouched on disk
+and can be re-enabled later with evidence. The new default catalog is
+`ClayMoneyTrail`, `WhisperAboutIt`, `Cthrew` (new — see below), and
+`WhisperCommandCenter` (new — explicitly admin/internal, reachable only
+through the same admin-gated commands as everything else).
+
+**Cthrew added.** `README.md` alone is allowlisted — narrower is safer
+for a first addition, and it already documents Cthrew's own
+non-negotiable verification-status rule and the fact that its v0.1
+shipped dataset is entirely fictional demo content end-to-end (real
+public-source ingestion hasn't started there yet).
+
+**Guild-scoped memory (contamination prevention).** `memories` and
+`lore` gained an additive, nullable `guild_id` column, stamped
+automatically at write time from `config.discord.guildId` — never
+caller-supplied. `memoryRetriever.js` filters `guild_id = <current
+guild>` in SQL. Every row written before this migration has `guild_id
+IS NULL`, which matches no guild's filter, including the one it actually
+came from — **preserved, never deleted, but structurally excluded from
+every live conversation.** (On this machine, `memories`/`lore` were
+empty at migration time — there was no historical WhisperSMP content to
+isolate from in practice, but the mechanism holds regardless.) Admin
+review tools (`searchMemories`, `searchLore`, `getMemoriesForUser`) are
+deliberately **not** guild-filtered, so an admin can still see/manage
+everything, old and new, for cleanup or reference.
+
+**systemd service + `wren` CLI (Parts O/P).** `deploy/wren.service` (a
+tracked template) is installed at `~/.config/systemd/user/wren.service`
+— `Type=simple`, `Restart=on-failure`, `RestartSec=10`, `ExecStart`
+pointing at `scripts/start-wren.sh` (a thin wrapper that prepends the
+mise shims directory to `PATH`, mirroring the fix already proven for
+WhisperCommandCenter's report timers, then `exec node src/bot.js`). No
+token or secret appears in the unit file or the wrapper — `DISCORD_TOKEN`
+is loaded from `.env` by `configManager.js`'s existing `dotenv` call,
+same as always. `bin/wren` (symlinked to `~/.local/bin/wren`) provides
+`wren on|off|status|restart|logs [-f]` — a thin, hardcoded wrapper around
+`systemctl --user`/`journalctl --user` against exactly one unit name
+(`wren.service`, never an argument-supplied one), no `sudo`, no `eval`,
+no shell-string construction.
+
+**Required environment variables as of Phase 17** (`.env`, never
+committed): `DISCORD_TOKEN` (required), `DISCORD_GUILD_ID` (required,
+`1549772221226950686`), `DISCORD_CLIENT_ID` (optional but recommended),
+`DISCORD_CHANNEL_ID` (optional, admin/ops-only restriction). **No `.env`
+file exists on this development machine** — Phase 17 did not create one
+and did not fabricate a token; a real Discord connectivity test cannot
+run until the user populates it.
+
+**Discord intents** — unchanged from before Phase 17, already correct
+for the new role: `Guilds`, `GuildMessages`, `MessageContent`,
+`GuildMembers`. No `GuildPresences` (Presence Intent) — nothing here
+needs member online/status/activity data.
+
+**Safe startup procedure:** run `node --test tests/*.test.js` (expect
+204 passing) → populate `.env` → `wren on` → `wren status` to confirm
+`Active: active (running)` and check `wren logs` for a clean "Wren is
+online as ..." line with no crash loop → confirm in Discord that
+slash commands appear only in the configured guild → `wren off` if this
+was only a validation run, or leave running if intentionally deploying.
+
+Test with `node --test tests/wrenRebirth.test.js` (41 tests) for
+everything above; the broader suite's pre-existing tests were updated in
+place wherever they referenced a now-disabled catalog project (WhisperOS,
+WhisperBot, GamingUnfiltered, WhisperSMP, BroBeHonest), never removed.
 
 ## What should an AI read first?
 

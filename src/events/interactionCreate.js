@@ -1,5 +1,6 @@
 const { Events } = require('discord.js');
 const logger = require('../utils/logger');
+const { isAllowedGuild } = require('../utils/guildGuard');
 const controlPanel = require('../control/controlPanel');
 const memoryPanel = require('../control/memoryPanel');
 const lorePanel = require('../control/lorePanel');
@@ -28,6 +29,17 @@ module.exports = {
   name: Events.InteractionCreate,
   async execute(interaction, client) {
     try {
+      // Defense in depth: slash commands are already registered
+      // guild-scoped to config.discord.guildId (see commands/index.js), so
+      // Discord shouldn't route another guild's interaction here at all --
+      // but this is the one central chokepoint for every interaction type
+      // (commands, buttons, modals, select menus), so it's the right place
+      // to fail closed if that assumption is ever wrong.
+      if (interaction.guildId && !isAllowedGuild(interaction.guildId)) {
+        logger.warn('Ignored interaction from an unconfigured guild', { guildId: interaction.guildId });
+        return;
+      }
+
       if (interaction.isChatInputCommand()) {
         const command = client.commands.get(interaction.commandName);
         if (!command) {

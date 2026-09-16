@@ -35,8 +35,24 @@ class ConfigManager {
     this.discord = {
       token: requireEnv('DISCORD_TOKEN'),
       clientId: process.env.DISCORD_CLIENT_ID || null,
-      guildId: process.env.DISCORD_GUILD_ID || null,
-      channelId: fileConfig.discord?.channelId || '',
+      // The primary safety boundary as of Phase 17 (Wren Rebirth): Wren
+      // now operates community-wide across the Whisper About It / Unfiltered
+      // Talk Radio guild, not one hardcoded channel. Required (not
+      // optional) specifically so a missing/wrong value fails loudly at
+      // startup rather than letting Wren silently answer in whatever guild
+      // she happens to be added to -- see docs/ARCHITECTURE.md's guild
+      // isolation section.
+      guildId: requireEnv('DISCORD_GUILD_ID'),
+      // Optional, env-only (never committed to config.json -- a prior
+      // version hardcoded a specific WhisperSMP channel ID directly in
+      // committed config.json, which was exactly the "old guild coupling"
+      // Phase 17 removes). When set, restricts admin/ops surfaces
+      // (project awareness, handoffs, control panels) to this one channel
+      // IN ADDITION TO the admin-permission check those surfaces already
+      // require -- defense in depth, not the only gate. Public
+      // conversational features (mentions, /wren ask) are guild-scoped,
+      // not channel-scoped, and ignore this setting entirely.
+      channelId: process.env.DISCORD_CHANNEL_ID || '',
       typingIndicator: fileConfig.discord?.typingIndicator ?? true,
     };
 
@@ -91,10 +107,6 @@ class ConfigManager {
     };
 
     this.env = process.env.NODE_ENV || 'development';
-
-    if (!this.discord.channelId) {
-      throw new Error('config.json: discord.channelId must be set to the channel Wren should listen in.');
-    }
   }
 
   /**

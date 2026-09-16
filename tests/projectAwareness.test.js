@@ -39,15 +39,15 @@ test('denial message lists the currently allowed projects, not a fabricated list
 });
 
 test('formatReferenceContext labels its output as reference context, not fact', () => {
-  const ctx = projectContext.getProjectContext('WhisperOS');
+  const ctx = projectContext.getProjectContext('ClayMoneyTrail');
   const formatted = formatReferenceContext(ctx);
   assert.match(formatted, /REFERENCE CONTEXT/);
-  assert.match(formatted, /Project: WhisperOS/);
+  assert.match(formatted, /Project: ClayMoneyTrail/);
 });
 
 test('formatReferenceContext surfaces the handoff-staleness disclaimer when a handoff exists', () => {
-  const ctx = projectContext.getProjectContext('WhisperOS');
-  assert.ok(ctx.latestHandoff, 'expected WhisperOS to have a real handoff for this test to be meaningful');
+  const ctx = projectContext.getProjectContext('ClayMoneyTrail');
+  assert.ok(ctx.latestHandoff, 'expected ClayMoneyTrail to have a real handoff for this test to be meaningful');
   const formatted = formatReferenceContext(ctx);
   assert.match(formatted, /Current repository HEAD was not independently verified by Wren/);
 });
@@ -78,14 +78,14 @@ test('the model-facing RULES include every required safety instruction', () => {
 // --- 13/14: ordinary chat never loads project context; /wren project does ---
 
 test('ordinary conversation never includes REFERENCE CONTEXT, even when a project name is mentioned', async () => {
-  const messages = await conversationManager.getMessages('phase11-isolation-test-channel', 'What is happening with WhisperOS right now?');
+  const messages = await conversationManager.getMessages('phase11-isolation-test-channel', 'What is happening with ClayMoneyTrail right now?');
   const systemMsg = messages.find((m) => m.role === 'system');
   assert.equal(systemMsg.content.includes('REFERENCE CONTEXT'), false);
   assert.equal(systemMsg.content.includes(RULES), false);
 });
 
 test('the explicit project-awareness path DOES build a REFERENCE CONTEXT-labeled prompt', () => {
-  const ctx = projectContext.getProjectContext('WhisperBot');
+  const ctx = projectContext.getProjectContext('WhisperAboutIt');
   assert.equal(ctx.allowed, true);
   const formatted = formatReferenceContext(ctx);
   assert.match(formatted, /REFERENCE CONTEXT/);
@@ -108,8 +108,8 @@ test('a denied request never calls the Ollama service (no network attempted)', a
 
 // --- 1: project status with handoff ---
 
-test('formatFactsSummary reports a real handoff for WhisperOS accurately', () => {
-  const ctx = projectContext.getProjectContext('WhisperOS');
+test('formatFactsSummary reports a real handoff for ClayMoneyTrail accurately', () => {
+  const ctx = projectContext.getProjectContext('ClayMoneyTrail');
   const facts = extractProjectFacts(ctx);
   assert.equal(facts.hasHandoff, true);
   const summary = formatFactsSummary(facts);
@@ -120,7 +120,7 @@ test('formatFactsSummary reports a real handoff for WhisperOS accurately', () =>
 // --- 2: project status without handoff ---
 
 test('formatFactsSummary distinguishes documentation-only projects plainly', () => {
-  const ctx = projectContext.getProjectContext('WhisperBot');
+  const ctx = projectContext.getProjectContext('WhisperAboutIt');
   const facts = extractProjectFacts(ctx);
   assert.equal(facts.hasHandoff, false);
   const summary = formatFactsSummary(facts);
@@ -128,7 +128,7 @@ test('formatFactsSummary distinguishes documentation-only projects plainly', () 
 });
 
 test('buildDeterministicStatus for a no-handoff project states the documentation/recent-state distinction explicitly', () => {
-  const ctx = projectContext.getProjectContext('WhisperSMP');
+  const ctx = projectContext.getProjectContext('Cthrew');
   const facts = extractProjectFacts(ctx);
   const status = buildDeterministicStatus(facts);
   assert.match(status, /No operational handoff is currently available/);
@@ -161,7 +161,7 @@ test('a real (non-mocked) Ollama success still returns usedOllama: true', async 
   ollamaService.generateReply = async () => 'a real-looking reply';
   const restore = () => { ollamaService.generateReply = original; };
   try {
-    const result = await handleProjectAwarenessRequest({ userId: 'status-ok-test', projectName: 'WhisperContent' });
+    const result = await handleProjectAwarenessRequest({ userId: 'status-ok-test', projectName: 'WhisperAboutIt' });
     assert.equal(result.status, 'ok');
     assert.equal(result.usedOllama, true);
     assert.equal(result.reply, 'a real-looking reply');

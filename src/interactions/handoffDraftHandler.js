@@ -3,13 +3,8 @@ const { handleHandoffDraftRequest } = require('../services/handoffDraft');
 const { sendChunkedReply } = require('../utils/chunkedReply');
 const { ephemeral } = require('../utils/discordReply');
 
-/** Mirrors projectHandler.js's channel/enabled checks; uses chunked replies since a draft can be long. */
+/** Admin-only gating already happened in commands/wren.js; uses chunked replies since a draft can be long. */
 async function handleHandoffDraft(interaction) {
-  if (interaction.channelId !== config.discord.channelId) {
-    await interaction.reply(ephemeral({ content: `I only hold court in <#${config.discord.channelId}>, sugar.` }));
-    return;
-  }
-
   if (!config.projectAwareness.enabled) {
     await interaction.reply(ephemeral({ content: 'Project awareness is turned off right now, sugar.' }));
     return;

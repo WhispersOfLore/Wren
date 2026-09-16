@@ -200,20 +200,38 @@ test('a stale draft can never later be approved', (t) => {
 // Items 15-16: non-git projects
 // ===========================================================================
 
-test('a non-Git project can still be drafted normally', async () => {
-  cooldownManager.clear('p14-brobehonest-user');
-  const result = await handleHandoffDraftRequest({ userId: 'p14-brobehonest-user', projectName: 'BroBeHonest' });
-  assert.equal(result.status, 'ok');
-  assert.match(result.reply, /Draft ID:/);
+// Phase 17 note: BroBeHonest (the only non-Git project previously in
+// Wren's catalog) was disabled from the default community catalog (Part
+// I/K) -- it still exists and is untouched on disk, just no longer
+// reachable through handleHandoffDraftRequest. These two tests now
+// exercise the same non-Git behavior directly against a disposable
+// fixture directory (no .git), which is exactly what repoState.js and
+// the store see regardless of catalog membership.
+test('a non-Git project can still be drafted normally', (t) => {
+  const nonGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wren-nongit-draft-test-'));
+  t.after(() => fs.rmSync(nonGitDir, { recursive: true, force: true }));
+
+  const store = new HandoffApprovalStore();
+  const session = store.createSession({
+    project: 'FixtureNonGit', projectPath: nonGitDir, requesterUserId: 'nongit-draft-user',
+    draftText: 'DRAFT ONLY — NOT SAVED\n\nfixture draft text', facts: minimalFacts('FixtureNonGit', nonGitDir),
+  });
+  assert.match(session.draftId, /^[0-9a-f-]{36}$/i);
+  assert.equal(session.repositorySnapshot.atDraft.isGitRepo, false);
 });
 
-test('a non-Git project can never become eligible for persistence, even fully approved', async () => {
-  cooldownManager.clear('p14-brobehonest-user2');
-  const draft = await handleHandoffDraftRequest({ userId: 'p14-brobehonest-user2', projectName: 'BroBeHonest' });
-  const draftId = draft.reply.match(/Draft ID: ([0-9a-f-]{36})/i)[1];
-  const approval = approvalStore.approve({ draftId, actorUserId: 'p14-brobehonest-user2', isAdmin: false });
+test('a non-Git project can never become eligible for persistence, even fully approved', (t) => {
+  const nonGitDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wren-nongit-plan-test-'));
+  t.after(() => fs.rmSync(nonGitDir, { recursive: true, force: true }));
+
+  const store = new HandoffApprovalStore();
+  const session = store.createSession({
+    project: 'FixtureNonGit', projectPath: nonGitDir, requesterUserId: 'nongit-plan-user',
+    draftText: 'x', facts: minimalFacts('FixtureNonGit', nonGitDir),
+  });
+  const approval = store.approve({ draftId: session.draftId, actorUserId: 'nongit-plan-user', isAdmin: false });
   assert.equal(approval.ok, true);
-  const gate = approvalStore.beginPersistencePlan({ draftId, actorUserId: 'p14-brobehonest-user2', isAdmin: false });
+  const gate = store.beginPersistencePlan({ draftId: session.draftId, actorUserId: 'nongit-plan-user', isAdmin: false });
   assert.equal(gate.ok, true);
   const plan = buildPersistencePlan(gate.session);
   assert.equal(plan.eligible, false);
@@ -560,7 +578,7 @@ test('only the explicit slash-command handler calls approve/reject/beginPersiste
 
 test('handoff drafting still returns the DRAFT ONLY banner and approval instructions after Phase 14 wiring', async () => {
   cooldownManager.clear('p14-regression-user');
-  const result = await handleHandoffDraftRequest({ userId: 'p14-regression-user', projectName: 'WhisperSMP' });
+  const result = await handleHandoffDraftRequest({ userId: 'p14-regression-user', projectName: 'Cthrew' });
   assert.equal(result.status, 'ok');
   assert.match(result.reply, /DRAFT ONLY/);
   assert.match(result.reply, /Approve: \/wren handoff-approve/);

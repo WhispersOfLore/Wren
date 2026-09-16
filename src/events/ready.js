@@ -8,6 +8,6 @@ module.exports = {
   execute(client) {
     const enabled = statusManager.isEnabled();
     logger.info(`Wren is online as ${client.user.tag}`, { enabled });
-    client.user.setActivity(enabled ? 'the SMP' : 'in sleep mode', { type: ActivityType.Watching });
+    client.user.setActivity(enabled ? 'the community' : 'in sleep mode', { type: ActivityType.Watching });
   },
 };

@@ -2,6 +2,69 @@
 
 All notable changes to Wren are documented here.
 
+## [1.0.0] - 2026-09-16 — Wren Rebirth: Whisper About It Community AI (Phase 17)
+
+Wren's default domain changed from a WhisperSMP gaming companion to the
+community and research assistant for Whisper About It / Unfiltered Talk
+Radio -- without a rewrite. Existing generic infrastructure (project
+awareness, handoff drafting/approval, audit, permissions, Ollama
+integration, Discord plumbing) carried forward unchanged.
+
+- **New identity** (`src/ai/personality.js`): `BASE_IDENTITY` rewritten --
+  no longer "the AI companion of WhisperSMP." Explicitly disclaims being
+  a WhisperSMP character, Minecraft lore bot, or gaming assistant. Added
+  a CIVIC RESEARCH EVIDENCE RULE (never upgrade an allegation to a fact)
+  and an explicit insufficient-evidence fallback instruction.
+- **New guild is the real safety boundary:** `DISCORD_GUILD_ID` is now
+  **required** (`1549772221226950686`), checked via the new `src/utils/
+  guildGuard.js` in both `messageCreate.js` and `interactionCreate.js`.
+  The previously **committed** gaming channel ID in `config.json` is
+  gone; channel restriction is now optional, env-only
+  (`DISCORD_CHANNEL_ID`), and additive on top of admin gating, never the
+  only gate.
+- **CRITICAL authorization fix:** `/wren project` and every
+  `/wren handoff-*` command were previously gated only by an optional
+  channel restriction -- any member in that channel could use them. New
+  `src/utils/adminGate.js` requires `permissionManager.isAdmin()` first.
+  Does not weaken handoff-approve/reject/plan's own requester-or-admin
+  logic (every legitimate requester is now an admin by construction).
+- **`/wren link` removed** (Minecraft account linking) -- was fully
+  public with no gating. `playerManager.linkPlayer()` code and any
+  historical linked-account data are untouched, just unreferenced.
+- **Project catalog restructured:** `WhisperSMP`, `WhisperBot`,
+  `GamingUnfiltered`, `BroBeHonest`, `WhisperContent`, `WhatIfSeries`,
+  `WhisperOS` disabled (`enabled: false`, not deleted -- every project
+  untouched on disk). New default catalog: `ClayMoneyTrail`,
+  `WhisperAboutIt`, `Cthrew` (added, `README.md`-only entry point),
+  `WhisperCommandCenter` (added, explicitly admin/internal).
+- **Guild-scoped memory:** additive nullable `guild_id` column on
+  `memories`/`lore`, stamped automatically from the current configured
+  guild at write time -- never caller-supplied. `memoryRetriever.js`
+  filters by it in SQL. Pre-migration rows (`guild_id IS NULL`) match no
+  guild's filter and are structurally excluded from every live
+  conversation, without deleting a single row. Admin review tools are
+  deliberately not guild-filtered.
+- **Public/internal knowledge boundary:** additive `visibility` column
+  (`'internal'` default, `'public'` opt-in) and civic `verification_status`
+  column (`verified_fact`/`allegation`/`unverified_lead`/`hypothesis`/
+  `rejected`/`deprecated`, optional/`NULL` for non-civic memories).
+  `memoryRetriever.js` -- Wren's only public conversational retrieval
+  path -- filters to `visibility = 'public'`. No content was
+  bulk-published to make this true.
+- **systemd service + `wren` CLI:** `deploy/wren.service` installed to
+  `~/.config/systemd/user/wren.service` (`Restart=on-failure`, no
+  secrets in the unit), `scripts/start-wren.sh` wrapper (mise-PATH fix,
+  same pattern as WhisperCommandCenter's report timers), `bin/wren`
+  (`on|off|status|restart|logs [-f]`) hardcoded to exactly one unit name,
+  no `sudo`, no `eval`, no shell-string construction.
+- 41 new tests (`tests/wrenRebirth.test.js`), 204 total (up from 163) --
+  every pre-existing test referencing a now-disabled catalog project was
+  updated in place, none removed.
+- **No live Discord connectivity test performed:** no `.env` file exists
+  on this machine; `DISCORD_TOKEN`/`DISCORD_GUILD_ID` were not fabricated
+  or requested in chat, per this phase's explicit instruction. The user
+  must populate `.env` before `wren on` can succeed.
+
 ## [0.9.0] - 2026-09-16 — Repository State Guard + Persistence Dry-Run (Phase 14)
 
 Adds a read-only Git-drift guard on top of Phase 13's approval workflow,

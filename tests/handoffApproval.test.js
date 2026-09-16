@@ -74,7 +74,7 @@ test('changing one character of the draft text changes the hash', () => {
 
 test('the SHA-256 hash is never shown to the user in the draft reply', async () => {
   const uniqueUser = 'hash-visibility-test';
-  const result = await handleHandoffDraftRequest({ userId: uniqueUser, projectName: 'WhisperSMP' });
+  const result = await handleHandoffDraftRequest({ userId: uniqueUser, projectName: 'Cthrew' });
   const session = [...approvalStore.sessions.values()].find((s) => s.requesterUserId === uniqueUser);
   assert.ok(session, 'expected a session to have been created');
   assert.equal(result.reply.includes(session.draftHash), false);
@@ -359,7 +359,7 @@ test('every approval-lifecycle audit action fires with safe metadata only, never
 // ===========================================================================
 
 test('the draft reply shows the banner, Draft ID, Expires, approve/reject instructions, and the non-persistence note', async () => {
-  const result = await handleHandoffDraftRequest({ userId: 'display-contract-test', projectName: 'WhisperOS' });
+  const result = await handleHandoffDraftRequest({ userId: 'display-contract-test', projectName: 'ClayMoneyTrail' });
   assert.equal(result.status, 'ok');
   assert.match(result.reply, new RegExp(DRAFT_BANNER));
   assert.match(result.reply, /Draft ID: [0-9a-f-]{36}/i);
@@ -381,10 +381,10 @@ test('LLM-authored text cannot cause an approval, even if it contains approval-l
   });
 
   const userId = 'llm-authority-test';
-  const events = await auditEvents(() => handleHandoffDraftRequest({ userId, projectName: 'WhisperBot' }));
+  const events = await auditEvents(() => handleHandoffDraftRequest({ userId, projectName: 'WhisperAboutIt' }));
 
   assert.equal(events.some((e) => e.action === 'handoff_draft_approved'), false, 'gloss text must never itself trigger an approval');
-  const session = [...approvalStore.sessions.values()].find((s) => s.requesterUserId === userId && s.project === 'WhisperBot');
+  const session = [...approvalStore.sessions.values()].find((s) => s.requesterUserId === userId && s.project === 'WhisperAboutIt');
   assert.ok(session);
   assert.equal(session.status, 'pending', 'a draft must stay pending regardless of what the model wrote');
 });
@@ -470,8 +470,8 @@ test('a deterministic-fallback draft (Ollama down) can still be approved end to 
   });
 
   const userId = 'fallback-approve-test';
-  await handleHandoffDraftRequest({ userId, projectName: 'WhisperOS' });
-  const session = [...approvalStore.sessions.values()].find((s) => s.requesterUserId === userId && s.project === 'WhisperOS');
+  await handleHandoffDraftRequest({ userId, projectName: 'ClayMoneyTrail' });
+  const session = [...approvalStore.sessions.values()].find((s) => s.requesterUserId === userId && s.project === 'ClayMoneyTrail');
   const result = approvalStore.approve({ draftId: session.draftId, actorUserId: userId, isAdmin: false });
   assert.equal(result.ok, true);
 });
@@ -484,8 +484,8 @@ test('an Ollama-enhanced draft can also be approved end to end', async (t) => {
   });
 
   const userId = 'ollama-approve-test';
-  await handleHandoffDraftRequest({ userId, projectName: 'WhisperBot' });
-  const session = [...approvalStore.sessions.values()].find((s) => s.requesterUserId === userId && s.project === 'WhisperBot');
+  await handleHandoffDraftRequest({ userId, projectName: 'WhisperAboutIt' });
+  const session = [...approvalStore.sessions.values()].find((s) => s.requesterUserId === userId && s.project === 'WhisperAboutIt');
   const result = approvalStore.approve({ draftId: session.draftId, actorUserId: userId, isAdmin: false });
   assert.equal(result.ok, true);
 });
@@ -494,11 +494,11 @@ test('an Ollama-enhanced draft can also be approved end to end', async (t) => {
 // 16. Part T -- live local simulation (no Discord gateway, fixture identities)
 // ===========================================================================
 
-test('Part T simulation: User A drafts WhisperOS, User B is denied, User A approves, nothing is written', async () => {
+test('Part T simulation: User A drafts ClayMoneyTrail, User B is denied, User A approves, nothing is written', async () => {
   cooldownManager.clear('sim-user-a');
   const before = fs.readdirSync(path.resolve(__dirname, '..', '..', 'WhisperCommandCenter')).sort();
 
-  const draftResult = await handleHandoffDraftRequest({ userId: 'sim-user-a', projectName: 'WhisperOS' });
+  const draftResult = await handleHandoffDraftRequest({ userId: 'sim-user-a', projectName: 'ClayMoneyTrail' });
   const idMatch = draftResult.reply.match(/Draft ID: ([0-9a-f-]{36})/i);
   assert.ok(idMatch, 'draft reply must contain a Draft ID');
   const draftId = idMatch[1];
@@ -514,14 +514,14 @@ test('Part T simulation: User A drafts WhisperOS, User B is denied, User A appro
   assert.deepEqual(before, after);
 });
 
-test('Part T simulation: User A drafts GamingUnfiltered twice, first is superseded, rejecting the second forecloses approval', async () => {
+test('Part T simulation: User A drafts WhisperAboutIt twice, first is superseded, rejecting the second forecloses approval', async () => {
   cooldownManager.clear('sim-user-a2');
 
-  const first = await handleHandoffDraftRequest({ userId: 'sim-user-a2', projectName: 'GamingUnfiltered' });
+  const first = await handleHandoffDraftRequest({ userId: 'sim-user-a2', projectName: 'WhisperAboutIt' });
   const firstId = first.reply.match(/Draft ID: ([0-9a-f-]{36})/i)[1];
 
   cooldownManager.clear('sim-user-a2');
-  const second = await handleHandoffDraftRequest({ userId: 'sim-user-a2', projectName: 'GamingUnfiltered' });
+  const second = await handleHandoffDraftRequest({ userId: 'sim-user-a2', projectName: 'WhisperAboutIt' });
   const secondId = second.reply.match(/Draft ID: ([0-9a-f-]{36})/i)[1];
 
   assert.notEqual(firstId, secondId);

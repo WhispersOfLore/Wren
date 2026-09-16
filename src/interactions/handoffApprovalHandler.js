@@ -1,4 +1,3 @@
-const config = require('../config/configManager');
 const permissionManager = require('../control/permissionManager');
 const { sharedStore: approvalStore } = require('../services/handoffApproval');
 const { buildPersistencePlan, formatPersistencePlanForDisplay } = require('../services/handoffPersistencePlan');
@@ -40,11 +39,6 @@ function denialMessage(reason, session) {
 }
 
 async function handleHandoffApprove(interaction) {
-  if (interaction.channelId !== config.discord.channelId) {
-    await interaction.reply(ephemeral({ content: `I only hold court in <#${config.discord.channelId}>, sugar.` }));
-    return;
-  }
-
   const draftId = interaction.options.getString('draft-id', true).trim();
   const result = approvalStore.approve({
     draftId,
@@ -67,11 +61,6 @@ async function handleHandoffApprove(interaction) {
 }
 
 async function handleHandoffReject(interaction) {
-  if (interaction.channelId !== config.discord.channelId) {
-    await interaction.reply(ephemeral({ content: `I only hold court in <#${config.discord.channelId}>, sugar.` }));
-    return;
-  }
-
   const draftId = interaction.options.getString('draft-id', true).trim();
   const result = approvalStore.reject({
     draftId,
@@ -92,11 +81,6 @@ async function handleHandoffReject(interaction) {
 }
 
 async function handleHandoffPlan(interaction) {
-  if (interaction.channelId !== config.discord.channelId) {
-    await interaction.reply(ephemeral({ content: `I only hold court in <#${config.discord.channelId}>, sugar.` }));
-    return;
-  }
-
   await interaction.deferReply();
 
   const draftId = interaction.options.getString('draft-id', true).trim();

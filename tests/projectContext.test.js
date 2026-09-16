@@ -23,17 +23,17 @@ function writeFile(dir, relPath, content) {
 
 // --- 1/2/3: the three Phase 10 allowlisted projects resolve successfully ---
 
-test('WhisperOS resolves successfully', () => {
-  const ctx = getProjectContext('WhisperOS');
+test('WhisperAboutIt resolves successfully', () => {
+  const ctx = getProjectContext('WhisperAboutIt');
   assert.equal(ctx.allowed, true);
-  assert.equal(ctx.project, 'WhisperOS');
-  assert.ok(ctx.projectPath.endsWith('WhisperOS'));
+  assert.equal(ctx.project, 'WhisperAboutIt');
+  assert.ok(ctx.projectPath.endsWith('WhisperAboutIt'));
 });
 
-test('GamingUnfiltered resolves successfully', () => {
-  const ctx = getProjectContext('GamingUnfiltered');
+test('Cthrew resolves successfully', () => {
+  const ctx = getProjectContext('Cthrew');
   assert.equal(ctx.allowed, true);
-  assert.equal(ctx.project, 'GamingUnfiltered');
+  assert.equal(ctx.project, 'Cthrew');
 });
 
 test('ClayMoneyTrail resolves successfully', () => {
@@ -43,9 +43,21 @@ test('ClayMoneyTrail resolves successfully', () => {
 });
 
 test('project name matching is case-insensitive', () => {
-  const ctx = getProjectContext('whisperos');
+  const ctx = getProjectContext('claymoneytrail');
   assert.equal(ctx.allowed, true);
-  assert.equal(ctx.project, 'WhisperOS');
+  assert.equal(ctx.project, 'ClayMoneyTrail');
+});
+
+// --- Phase 17: gaming-ecosystem projects are disabled from Wren's default catalog ---
+
+test('WhisperOS is disabled from the default community catalog (Phase 17)', () => {
+  const ctx = getProjectContext('WhisperOS');
+  assert.equal(ctx.allowed, false);
+});
+
+test('GamingUnfiltered is disabled from the default community catalog (Phase 17)', () => {
+  const ctx = getProjectContext('GamingUnfiltered');
+  assert.equal(ctx.allowed, false);
 });
 
 // --- 4: unknown project is rejected ---
@@ -268,13 +280,14 @@ test('a handoff entry for a different project_path is not matched', () => {
   assert.equal(result, null);
 });
 
-test('real WhisperOS handoffs: newest wins against the actual registry', () => {
-  // Live, read-only check against real Phase 6/7 handoffs -- no fixture.
-  const ctx = getProjectContext('WhisperOS');
-  assert.ok(ctx.latestHandoff, 'expected a real handoff to exist for WhisperOS');
-  // The Phase 7 handoff (2026-09-15-1753-whisperos) is newer than the
-  // Phase 6 one (2026-09-15-1739-whisperos).
-  assert.equal(ctx.latestHandoff.id, '2026-09-15-1753-whisperos');
+test('real WhisperCommandCenter handoffs: newest wins against the actual registry', () => {
+  // Live, read-only check against real handoffs -- no fixture. WhisperOS
+  // is disabled from Wren's catalog as of Phase 17, so this now uses
+  // WhisperCommandCenter (added Phase 17), which also has two real
+  // handoffs on record.
+  const ctx = getProjectContext('WhisperCommandCenter');
+  assert.ok(ctx.latestHandoff, 'expected a real handoff to exist for WhisperCommandCenter');
+  assert.equal(ctx.latestHandoff.id, '2026-09-15-1727-whispercommandcenter');
 });
 
 // --- 13: ClayMoneyTrail evidence-status vocabulary survives into context untouched ---

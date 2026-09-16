@@ -24,7 +24,7 @@ function factsFor(projectName) {
 // --- 5: DRAFT ONLY -- NOT SAVED always present ---
 
 test('the deterministic draft always opens and closes with the DRAFT ONLY banner', () => {
-  for (const name of ['WhisperOS', 'WhisperBot', 'ClayMoneyTrail']) {
+  for (const name of ['WhisperCommandCenter', 'WhisperAboutIt', 'ClayMoneyTrail']) {
     const draft = buildDeterministicDraft(factsFor(name), { agent: 'Wren' });
     const lines = draft.split('\n').filter((l) => l.trim());
     assert.equal(lines[0], DRAFT_BANNER);
@@ -35,9 +35,9 @@ test('the deterministic draft always opens and closes with the DRAFT ONLY banner
 
 // --- 3: draft with existing handoff ---
 
-test('WhisperOS draft (has a real handoff) fills Completed/Outstanding/Next Action from it', () => {
-  const facts = factsFor('WhisperOS');
-  assert.equal(facts.hasHandoff, true, 'this test requires WhisperOS to have a real handoff');
+test('WhisperCommandCenter draft (has a real handoff) fills Completed/Outstanding/Next Action from it', () => {
+  const facts = factsFor('WhisperCommandCenter');
+  assert.equal(facts.hasHandoff, true, 'this test requires WhisperCommandCenter to have a real handoff');
   const draft = buildDeterministicDraft(facts, { agent: 'Wren' });
   assert.doesNotMatch(draft, /## Completed\nNO CURRENT HANDOFF/);
   assert.match(draft, new RegExp(`Latest available handoff recorded commit ${facts.recordedCommit}`));
@@ -45,9 +45,9 @@ test('WhisperOS draft (has a real handoff) fills Completed/Outstanding/Next Acti
 
 // --- 4/10: draft without handoff uses UNKNOWN / NO CURRENT HANDOFF markers ---
 
-test('WhisperBot draft (no handoff) is conservative -- no invented "completed today"', () => {
-  const facts = factsFor('WhisperBot');
-  assert.equal(facts.hasHandoff, false, 'this test requires WhisperBot to have no handoff yet');
+test('WhisperAboutIt draft (no handoff) is conservative -- no invented "completed today"', () => {
+  const facts = factsFor('WhisperAboutIt');
+  assert.equal(facts.hasHandoff, false, 'this test requires WhisperAboutIt to have no handoff yet');
   const draft = buildDeterministicDraft(facts, { agent: 'Wren' });
   assert.match(draft, /NO CURRENT HANDOFF/);
   assert.match(draft, /Current HEAD NOT VERIFIED/);
@@ -58,7 +58,7 @@ test('WhisperBot draft (no handoff) is conservative -- no invented "completed to
 // --- 9: current HEAD never falsely claimed ---
 
 test('no deterministic draft ever claims current HEAD was verified', () => {
-  for (const name of ['WhisperOS', 'GamingUnfiltered', 'ClayMoneyTrail', 'WhisperBot', 'WhisperSMP']) {
+  for (const name of ['WhisperCommandCenter', 'ClayMoneyTrail', 'WhisperAboutIt', 'Cthrew']) {
     const draft = buildDeterministicDraft(factsFor(name), { agent: 'Wren' });
     assert.doesNotMatch(draft, /current head (was|is) (independently )?verified/i);
     assert.match(draft, /HEAD/); // the phrase discussing HEAD must still be present, just as "not verified"
@@ -130,7 +130,7 @@ test('handoff-draft falls back to the deterministic draft when Ollama is unavail
     ollamaService.generateReply = original;
   });
 
-  const result = await handleHandoffDraftRequest({ userId: 'draft-fallback-test', projectName: 'WhisperOS' });
+  const result = await handleHandoffDraftRequest({ userId: 'draft-fallback-test', projectName: 'ClayMoneyTrail' });
   assert.equal(result.status, 'ok');
   assert.equal(result.usedOllama, false);
   assert.match(result.reply, /local model unavailable/i);
@@ -141,7 +141,7 @@ test('handoff-draft falls back to the deterministic draft when Ollama is unavail
 
 test('handoff_draft_generated/fallback audit events never include document content', async () => {
   const eventPromise = nextAuditEvent();
-  await handleHandoffDraftRequest({ userId: 'draft-audit-test', projectName: 'WhisperSMP' });
+  await handleHandoffDraftRequest({ userId: 'draft-audit-test', projectName: 'Cthrew' });
   const event = await eventPromise;
   const serialized = JSON.stringify(event);
   assert.ok(!serialized.includes('## Completed')); // a raw handoff/markdown fragment would never appear

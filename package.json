@@ -1,7 +1,7 @@
 {
   "name": "wren",
   "version": "1.0.0",
-  "description": "Wren — the local AI-powered Discord companion for WhisperSMP",
+  "description": "Wren — the local AI-powered community and research assistant for Whisper About It / Unfiltered Talk Radio",
   "main": "src/bot.js",
   "scripts": {
     "start": "node src/bot.js",

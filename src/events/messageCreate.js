@@ -1,6 +1,6 @@
 const { Events } = require('discord.js');
-const config = require('../config/configManager');
 const logger = require('../utils/logger');
+const { isAllowedGuild } = require('../utils/guildGuard');
 const { handleMention } = require('../interactions/mentionHandler');
 const { handlePrefix, matchesPrefix } = require('../interactions/prefixHandler');
 
@@ -8,7 +8,12 @@ module.exports = {
   name: Events.MessageCreate,
   async execute(message, client) {
     if (message.author.bot) return;
-    if (message.channelId !== config.discord.channelId) return;
+    // Guild-scoped, not channel-scoped, as of Phase 17: public
+    // conversation works anywhere in the one configured community guild.
+    // A message with no guildId (a DM) or from any other guild is ignored
+    // -- Wren has no DM features and must never respond outside her one
+    // configured guild.
+    if (!isAllowedGuild(message.guildId)) return;
     if (!message.content?.trim()) return;
 
     try {

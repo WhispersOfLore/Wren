@@ -1,13 +1,10 @@
-const config = require('../config/configManager');
 const { handleWrenRequest } = require('./responder');
-const { replyToInteraction, ephemeral } = require('../utils/discordReply');
+const { replyToInteraction } = require('../utils/discordReply');
 
+// Guild-scoped, not channel-scoped, as of Phase 17: /wren ask is Wren's
+// core public community path and works anywhere in the one configured
+// guild (already enforced centrally in events/interactionCreate.js).
 async function handleAsk(interaction) {
-  if (interaction.channelId !== config.discord.channelId) {
-    await interaction.reply(ephemeral({ content: `I only hold court in <#${config.discord.channelId}>, sugar.` }));
-    return;
-  }
-
   await interaction.deferReply();
 
   const text = interaction.options.getString('message', true);

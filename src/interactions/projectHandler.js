@@ -2,13 +2,8 @@ const config = require('../config/configManager');
 const { handleProjectAwarenessRequest } = require('../services/projectAwareness');
 const { replyToInteraction, ephemeral } = require('../utils/discordReply');
 
-/** Mirrors slashHandler.js's handleAsk: same channel restriction, same defer/reply shape. */
+/** Admin-only gating (identity + optional channel) already happened in commands/wren.js before this is called. */
 async function handleProject(interaction) {
-  if (interaction.channelId !== config.discord.channelId) {
-    await interaction.reply(ephemeral({ content: `I only hold court in <#${config.discord.channelId}>, sugar.` }));
-    return;
-  }
-
   if (!config.projectAwareness.enabled) {
     await interaction.reply(ephemeral({ content: "Project awareness is turned off right now, sugar." }));
     return;

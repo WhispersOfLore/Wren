@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+# Simple Wren lifecycle wrapper (Phase 17, Part P).
+#
+# wren on | off | status | restart | logs [-f|--follow]
+#
+# Safety properties, all deliberate:
+#   - UNIT is a single hardcoded literal -- never derived from an argument,
+#     an environment variable, or anything else. There is no way to make
+#     this script act on any other systemd unit.
+#   - No sudo anywhere -- this only ever touches the CALLING USER's own
+#     `systemctl --user` / `journalctl --user` scope, never a system unit.
+#   - No `eval`, no `sh -c`, no string-built shell command -- every command
+#     below is a fixed argv list; "$@" is only ever passed to `journalctl`
+#     as literal, non-shell-interpreted arguments (and even then, only
+#     after the -f/--follow check below, never forwarded blindly).
+#   - Everything is a thin, direct call to systemctl/journalctl -- this
+#     script contains no process-management logic of its own.
+set -euo pipefail
+
+readonly UNIT="wren.service"
+
+usage() {
+  echo "Usage: wren {on|off|status|restart|logs [-f|--follow]}" >&2
+  exit 1
+}
+
+case "${1:-}" in
+  on)
+    systemctl --user start "$UNIT"
+    ;;
+  off)
+    systemctl --user stop "$UNIT"
+    ;;
+  status)
+    systemctl --user status "$UNIT" --no-pager
+    ;;
+  restart)
+    systemctl --user restart "$UNIT"
+    ;;
+  logs)
+    if [[ "${2:-}" == "-f" || "${2:-}" == "--follow" ]]; then
+      exec journalctl --user -u "$UNIT" -n 50 -f --no-pager
+    else
+      exec journalctl --user -u "$UNIT" -n 50 --no-pager
+    fi
+    ;;
+  *)
+    usage
+    ;;
+esac

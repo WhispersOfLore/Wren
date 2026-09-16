@@ -3,49 +3,70 @@
   "projects": [
     {
       "name": "WhisperOS",
-      "enabled": true,
-      "entryPoints": ["CLAUDE.md", "README.md", "docs/DEVELOPMENT_RULES.md"]
+      "enabled": false,
+      "entryPoints": ["CLAUDE.md", "README.md", "docs/DEVELOPMENT_RULES.md"],
+      "notes": "Disabled Phase 17 (Wren Rebirth): not part of the new Whisper About It / Unfiltered Talk Radio community domain (Part I). Not gaming content itself, but not evidenced to support the new role either. Entry unmodified/undeleted -- can be re-enabled if evidence ever supports it."
     },
     {
       "name": "GamingUnfiltered",
-      "enabled": true,
+      "enabled": false,
       "aliases": ["GamezUnfiltered"],
-      "entryPoints": ["CLAUDE.md", "README.md"]
+      "entryPoints": ["CLAUDE.md", "README.md"],
+      "notes": "Disabled Phase 17: gaming-ecosystem content, no longer part of Wren's default community-facing catalog (Part I/K). Project itself untouched."
     },
     {
       "name": "ClayMoneyTrail",
       "enabled": true,
-      "entryPoints": ["README.md"]
+      "entryPoints": ["README.md"],
+      "notes": "Core Phase 17 domain project. Civic research -- access still admin-only pending Phase 18's public/approved-content model (Part H)."
     },
     {
       "name": "WhisperBot",
-      "enabled": true,
-      "entryPoints": ["CLAUDE.md", "README.md"]
+      "enabled": false,
+      "entryPoints": ["CLAUDE.md", "README.md"],
+      "notes": "Disabled Phase 17: WhisperSMP gaming ecosystem, explicitly separate from Wren's new domain (Part I/K). Project itself untouched."
     },
     {
       "name": "WhisperSMP",
-      "enabled": true,
-      "entryPoints": ["CLAUDE.md"]
+      "enabled": false,
+      "entryPoints": ["CLAUDE.md"],
+      "notes": "Disabled Phase 17: WhisperSMP remains its own separate gaming ecosystem, not absorbed into Wren's new community role (Part K). Project itself untouched."
     },
     {
       "name": "WhisperAboutIt",
       "enabled": true,
-      "entryPoints": ["REVIEW.md"]
+      "entryPoints": ["REVIEW.md"],
+      "notes": "Core Phase 17 domain project -- Wren's new namesake community/content brand."
     },
     {
       "name": "WhisperContent",
-      "enabled": true,
-      "entryPoints": ["README.md"]
+      "enabled": false,
+      "entryPoints": ["README.md"],
+      "notes": "Disabled Phase 17: WhisperSMP lore/shorts content lab, gaming-ecosystem-specific (Part I). Project itself untouched."
     },
     {
       "name": "BroBeHonest",
-      "enabled": true,
-      "entryPoints": ["README.md"]
+      "enabled": false,
+      "entryPoints": ["README.md"],
+      "notes": "Disabled Phase 17: gaming Shorts channel, no longer part of Wren's default community-facing catalog (Part I/K). Project itself untouched."
     },
     {
       "name": "WhatIfSeries",
+      "enabled": false,
+      "entryPoints": ["README.md"],
+      "notes": "Disabled Phase 17: Minecraft/game-character reaction-video content, gaming-adjacent (Part I). Project itself untouched."
+    },
+    {
+      "name": "Cthrew",
       "enabled": true,
-      "entryPoints": ["README.md"]
+      "entryPoints": ["README.md"],
+      "notes": "Added Phase 17 (Part J). README.md alone is allowlisted -- it already documents Cthrew's own non-negotiable verification-status rule (discovered -> needs_review -> verified, or rejected/deprecated) and states its shipped v0.1 dataset is entirely fictional demo data, end-to-end -- nothing in the repository describes a real person, business, or event as of this phase. No deeper docs/ files allowlisted; narrower is safer for a first addition. Admin-only access, same as every other catalog entry."
+    },
+    {
+      "name": "WhisperCommandCenter",
+      "enabled": true,
+      "entryPoints": ["CLAUDE.md"],
+      "notes": "Added Phase 17 (Part I): explicitly ADMIN/internal, never public -- reachable only through the same admin-gated /wren project and /wren handoff-* commands as every other catalog entry (see utils/adminGate.js)."
     }
   ]
 }

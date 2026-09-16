@@ -1,0 +1,14 @@
+[Unit]
+Description=Wren -- Whisper About It / Unfiltered Talk Radio community AI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/whisper/Projects/Wren
+ExecStart=/home/whisper/Projects/Wren/scripts/start-wren.sh
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
