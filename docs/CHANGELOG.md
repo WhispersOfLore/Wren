@@ -2,6 +2,83 @@
 
 All notable changes to Wren are documented here.
 
+## [0.9.0] - 2026-09-16 — Repository State Guard + Persistence Dry-Run (Phase 14)
+
+Adds a read-only Git-drift guard on top of Phase 13's approval workflow,
+plus a deterministic "persistence plan" preview. **No handoff is
+written, no `index.json` entry is added, and no CommandCenter or project
+file is touched.** This phase proves the last piece a real write would
+need to check -- "did the repository move since this was
+approved?" -- without granting write authority.
+
+- **`src/services/repoState.js` (new):** the only file in the codebase
+  authorized to execute a subprocess. Captures `{isGitRepo, headCommit,
+  branch, workingTreeDirty, workingTreeFingerprint, capturedAt}` via a
+  strictly-constrained `execFileSync('git', [...])` -- hardcoded
+  executable, four fixed read-only argv shapes only (`rev-parse
+  --is-inside-work-tree`, `rev-parse HEAD`, `branch --show-current`,
+  `status --porcelain`), no shell, 3s timeout, 256KB output cap, `cwd`
+  always the catalog-resolved canonical project path, environment
+  trimmed to `PATH` only. Direct `.git`-file parsing was investigated
+  and rejected as fragile against worktrees/packed-refs/detached HEAD.
+- **Working-tree fingerprint:** `SHA-256(git status --porcelain
+  output)` -- the raw porcelain text is never returned, logged, or shown
+  to a user or the model. Documented limitation: this catches drift in
+  the *shape* of git's status output, not byte-for-byte file contents.
+  `dirty -> dirty` is deliberately not treated as unchanged; only a
+  matching fingerprint counts.
+- **Three-checkpoint drift guard:** a snapshot is captured at draft
+  creation, rechecked at approval (vs. draft), and rechecked again at
+  plan-generation (vs. approval). Any drift on HEAD, branch, dirty flag,
+  or fingerprint fails the session closed into a new terminal `stale`
+  status -- never silently regenerated or approved. A stale draft can
+  never later be approved or planned.
+- **Non-Git projects** (e.g. `BroBeHonest`) draft and approve normally
+  (nothing to drift), but a persistence plan for one is always marked
+  `eligible: false` with an explicit reason -- there's no repository
+  checkpoint to bind the approval to.
+- **`/wren handoff-plan <draft-id>` (new):** requires an already-`approved`
+  draft, requester/admin authorization, and a passing repository
+  recheck. Builds a deterministic persistence-plan object
+  (`src/services/handoffPersistencePlan.js`) from the same structured
+  facts the draft itself was built from (never by re-parsing the
+  rendered Discord text), and displays it headed/footed with `DRY RUN —
+  NOTHING WAS SAVED`. `agent` is always the literal `"Wren"`; `objective`
+  stays Phase 12's fixed conservative phrase; `validation` explicitly
+  separates what a source handoff reported from what Wren itself
+  verified (repository identity only -- never a claim that tests were
+  run); `gitState` reports `Pushed: unknown` unless a source handoff
+  already recorded a value.
+- **CommandCenter compatibility investigated, nothing modified there:**
+  read `create-handoff.py`/`TEMPLATE.md`/`README.md`/`validate-handoffs.py`
+  to map plan fields onto the real schema. Found two real
+  incompatibilities worth flagging for a future phase: the tool's
+  auto-generated `## Git State` block hardcodes `Working Tree: (fill
+  in)` with no CLI flag to supply a real value, and `--pushed` is a
+  plain boolean with no way to express "unknown."
+- New audit events: `handoff_repo_snapshot_captured` (all three
+  checkpoints), `handoff_draft_stale`, `handoff_persistence_plan_generated`,
+  `handoff_persistence_plan_denied` -- metadata only, never the porcelain
+  listing, a filename, or the fingerprint itself.
+- 52 new tests (161 total, up from 109): fixture-repo snapshot mechanics,
+  fingerprint determinism and sensitivity to porcelain shape (not just
+  the dirty flag), HEAD/branch/dirty/fingerprint drift each independently
+  blocking approval, drift after approval blocking plan generation,
+  non-Git ineligibility, all approve/plan authorization and status-gating
+  paths, zero-file-write and zero-index-change verification, audit
+  metadata never containing filenames or raw porcelain output, a
+  subprocess security review (hardcoded executable/argv, no shell,
+  timeout/maxBuffer enforced, trimmed environment), and regression checks
+  that ordinary chat, `/wren project`, and plain handoff drafting are
+  unaffected. Real, read-only snapshots verified against `WhisperOS`,
+  `GamingUnfiltered` (dirty), and `ClayMoneyTrail`; all drift scenarios
+  run only against disposable fixture repos under the OS temp directory.
+
+**Still zero write authority.** No file is written, no
+`handoffs/index.json` entry is added or changed, `create-handoff.py` is
+never called, and no git command beyond the four fixed read-only
+subcommands above is ever run.
+
 ## [0.8.0] - 2026-09-16 — Human Approval Workflow for Handoff Drafts (Phase 13)
 
 Adds a transient, in-memory human-approval layer on top of Phase 12's

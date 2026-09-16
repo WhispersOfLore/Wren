@@ -1,15 +1,18 @@
 const config = require('../config/configManager');
 const permissionManager = require('../control/permissionManager');
 const { sharedStore: approvalStore } = require('../services/handoffApproval');
+const { buildPersistencePlan, formatPersistencePlanForDisplay } = require('../services/handoffPersistencePlan');
+const { sendChunkedReply } = require('../utils/chunkedReply');
 const { ephemeral } = require('../utils/discordReply');
 
 /**
- * Human approval/rejection of a handoff draft (Phase 13). This handler and
- * the store it calls into NEVER write a file, call create-handoff.py, edit
- * index.json, or touch git -- approving only flips an in-memory status.
- * Natural-language phrases like "looks good" or "approved" typed in chat
- * are never routed here; only this explicit slash subcommand can change a
- * draft's status.
+ * Human approval/rejection/dry-run planning of a handoff draft (Phase 13
+ * approve/reject; Phase 14 handoff-plan). None of this ever writes a
+ * file, calls create-handoff.py, edits index.json, or touches git --
+ * approving only flips an in-memory status, and the plan command only
+ * builds and displays an object. Natural-language phrases like "looks
+ * good" or "approved" typed in chat are never routed here; only these
+ * explicit slash subcommands can change a draft's status.
  */
 
 function denialMessage(reason, session) {
@@ -26,6 +29,11 @@ function denialMessage(reason, session) {
       return `Draft ${session.draftId} has expired. Ask me to draft it again, sugar.`;
     case 'status_superseded':
       return `Draft ${session.draftId} was replaced by a newer draft for that project. Act on the newer one instead.`;
+    case 'status_stale':
+    case 'stale':
+      return `Draft ${session.draftId} is stale -- the project's repository state changed since it was last checked. Ask me to draft it again, sugar.`;
+    case 'status_pending':
+      return `Draft ${session.draftId} hasn't been approved yet, sugar -- approve it first with /wren handoff-approve.`;
     default:
       return "I couldn't act on that draft, sugar.";
   }
@@ -83,4 +91,28 @@ async function handleHandoffReject(interaction) {
   );
 }
 
-module.exports = { handleHandoffApprove, handleHandoffReject };
+async function handleHandoffPlan(interaction) {
+  if (interaction.channelId !== config.discord.channelId) {
+    await interaction.reply(ephemeral({ content: `I only hold court in <#${config.discord.channelId}>, sugar.` }));
+    return;
+  }
+
+  await interaction.deferReply();
+
+  const draftId = interaction.options.getString('draft-id', true).trim();
+  const result = approvalStore.beginPersistencePlan({
+    draftId,
+    actorUserId: interaction.user.id,
+    isAdmin: permissionManager.isAdmin(interaction.member),
+  });
+
+  if (!result.ok) {
+    await sendChunkedReply(interaction, denialMessage(result.reason, result.session));
+    return;
+  }
+
+  const plan = buildPersistencePlan(result.session);
+  await sendChunkedReply(interaction, formatPersistencePlanForDisplay(plan));
+}
+
+module.exports = { handleHandoffApprove, handleHandoffReject, handleHandoffPlan };

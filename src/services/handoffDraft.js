@@ -197,6 +197,7 @@ async function handleHandoffDraftRequest({ userId, projectName, agent = 'Wren' }
     projectPath: context.projectPath,
     requesterUserId: userId,
     draftText: bodyText,
+    facts,
   });
 
   const finalText = `${bodyText}\n\n${buildApprovalBanner(session)}`;

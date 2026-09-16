@@ -281,16 +281,123 @@ the local model's gloss text contains language like "this is approved,"
 the resulting draft still sits `pending` until a human uses the actual
 slash command.
 
-**What approval does NOT mean:** it does not mean the repository's
-current `HEAD` was verified — Wren still cannot check git state, and
-the existing staleness disclaimer in the deterministic draft is
-untouched. Approval means only "a specific authorized human reviewed
-and approved this exact piece of text."
+**What approval does NOT mean:** approval means only "a specific
+authorized human reviewed and approved this exact piece of text" — not
+"the repository's current `HEAD` is correct" in some absolute sense.
+(Phase 14, below, adds a repository-state guard that catches *drift*
+between draft/approval/plan-generation time; it does not make Wren an
+authority on whether the repository is in a *good* state, only on
+whether it *changed*.)
 
 Test with `node --test tests/handoffApproval.test.js` (37 tests,
 including a Part T–style local simulation of two Discord users acting
 on the same and different drafts, with fixture TTLs instead of real
 sleeps).
+
+## Repository state guard + persistence dry-run (Phase 14) — still no write authority
+
+Phase 13 proved a human could approve exact draft text. Phase 14 adds
+the piece a real future write would need without granting it: proof
+that the repository hasn't moved out from under the approval, plus a
+deterministic preview of what *could* be written. **No handoff is
+created, no `index.json` entry is added, no file is touched anywhere —
+this phase produces a plan object and a Discord message, nothing else.**
+
+**Repository snapshots (`src/services/repoState.js`, new):** a narrowly-
+scoped, read-only Git inspection module. It exposes exactly one thing:
+`captureRepositorySnapshot(project, projectPath)` returning `{isGitRepo,
+headCommit, branch, workingTreeDirty, workingTreeFingerprint,
+capturedAt}`. `projectPath` is always the catalog-resolved, canonical
+path `getProjectContext()` already produced — never a user-supplied
+string. Direct `.git`-file parsing (to avoid a subprocess entirely) was
+considered and rejected: worktrees, packed-refs, and detached HEADs make
+that fragile, and reimplementing git's own resolution incorrectly would
+be a *correctness* bug in a safety guard. Since the working-tree check
+has no non-subprocess alternative anyway (it needs the same index/diff
+logic git already implements), all three facts are read through one
+consistent, tightly-constrained `execFileSync('git', [...])` call —
+hardcoded executable, hardcoded argv (`rev-parse --is-inside-work-tree`,
+`rev-parse HEAD`, `branch --show-current`, `status --porcelain` only),
+no shell, a 3s timeout, a 256KB output cap, and an environment trimmed to
+`PATH` only so an ambient `GIT_DIR`/`GIT_WORK_TREE` can't redirect it.
+
+**The working-tree fingerprint is `SHA-256(git status --porcelain
+output)`** — never the porcelain text itself, which is never returned,
+displayed, or logged. **Documented limitation:** this fingerprints the
+*shape* of the status output, not file contents; a change that
+happens to produce byte-identical porcelain output (theoretically
+possible, practically rare) would not be caught. It is a guard against
+common drift (commits, branch switches, files staged/modified/added/
+removed), not a full content-integrity snapshot.
+
+**Three checkpoints, two comparisons:** a snapshot is captured at draft
+creation (`atDraft`), rechecked at approval (`atApproval`, compared
+against `atDraft`), and rechecked again at `/wren handoff-plan`
+(`atPlan`, compared against `atApproval`). Any drift at either
+comparison — HEAD, branch, dirty flag, or fingerprint — fails the
+session closed into a new terminal `stale` status (extending Phase 13's
+`pending/approved/rejected/expired/superseded` with `stale`). A stale
+draft can never later be approved or planned; the user must generate a
+new draft. **Dirty→dirty is deliberately not treated as unchanged** —
+`GamingUnfiltered` legitimately has an ongoing dirty tree, so only an
+exact fingerprint match counts as "nothing changed."
+
+**Non-Git projects (e.g. `BroBeHonest`) are unaffected for drafting and
+approval** — snapshots simply record `isGitRepo: false` and two such
+snapshots always "match" (nothing to drift). But `/wren handoff-plan`
+always marks these `eligible: false` with an explicit reason: there is
+no repository checkpoint to bind the approval to. Wren never invents git
+state for a project that doesn't have any.
+
+**`/wren handoff-plan <draft-id>` (new):** requires the draft to already
+be `approved` (not pending/rejected/expired/superseded/stale), passes
+the same requester-or-admin authorization as approve/reject, reruns the
+repository recheck, and — only if that passes — builds and displays a
+**persistence plan**: a deterministic object (`src/services/
+handoffPersistencePlan.js`) built from `session.facts` (the same
+`projectFacts.js` output the draft itself was built from) and the
+repository snapshots, never from the rendered Discord text. The reply is
+always headed and footed with `DRY RUN — NOTHING WAS SAVED`, states
+whether the project is `eligible` and why not if it isn't, and never
+prints the SHA-256 draft hash.
+
+**Field-mapping decisions, deliberately conservative:**
+- `agent` is always the literal `"Wren"` — never the model, never a
+  human's name, never "Claude."
+- `objective` stays Phase 12's fixed phrase ("Continuity summary based
+  on approved read-only project context") — reading a project is still
+  not performing work on it.
+- `validation` explicitly separates `SOURCE HANDOFF REPORTED
+  VALIDATION` (whatever a prior handoff said) from `WREN VERIFIED`
+  (repository identity across the three checkpoints, and nothing else —
+  Wren never claims to have run a test or a build).
+- `gitState` reports HEAD/branch/working-tree-state truthfully once
+  verified, but `Pushed:` is always `unknown` unless a source handoff
+  already recorded a value (shown distinctly, still not independently
+  re-verified) — Wren does not inspect remotes or push state.
+
+**CommandCenter compatibility (read-only investigation only, nothing
+changed there):** `create-handoff.py`'s own generated Markdown always
+injects its *own* `## Git State` block from `--branch`/`--commit`/
+`--pushed` flags — its `Working Tree:` line is hardcoded to `(fill in)`
+with no CLI flag to supply it, and `--pushed` is a plain boolean with no
+"unknown" state. Both are real, documented gaps a future persistence
+phase would need to address (extend the tool, or post-process its
+output) — noted here, not fixed, since modifying CommandCenter is out of
+scope for Phase 14.
+
+**Audit events added:** `handoff_repo_snapshot_captured` (fired at each
+of the three checkpoints, with a `phase` field), `handoff_draft_stale`,
+`handoff_persistence_plan_generated`, `handoff_persistence_plan_denied`
+— metadata only (draftId, project, actor/requester IDs, HEAD, branch,
+dirty flag, timestamps); the porcelain listing, filenames, and the
+fingerprint itself are never logged.
+
+Test with `node --test tests/repoState.test.js
+tests/handoffPersistencePlan.test.js` (52 tests), including real
+read-only snapshots of `WhisperOS`/`GamingUnfiltered`/`ClayMoneyTrail`
+and drift scenarios run only against disposable fixture repos under
+the OS temp directory — never against a real project.
 
 ## What should an AI read first?
 

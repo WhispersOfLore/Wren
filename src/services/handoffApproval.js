@@ -1,6 +1,7 @@
 const crypto = require('node:crypto');
 const config = require('../config/configManager');
 const auditLog = require('../audit/auditLog');
+const repoState = require('./repoState');
 
 /**
  * Transient, in-memory human-approval layer for handoff drafts (Phase 13).
@@ -49,15 +50,25 @@ const auditLog = require('../audit/auditLog');
  *    draftId/project/requesterUserId/actorUserId/status-shaped metadata.
  *    Draft text and the SHA-256 hash are never logged.
  *
- * What approval explicitly does NOT mean: it does not mean "the
- * repository state is currently verified" (Wren still cannot check git
- * HEAD) -- only "a specific human approved this exact piece of text."
+ * Phase 14 adds a repository-state guard on top of the above (see
+ * `src/services/repoState.js` for the narrowly-scoped git inspection
+ * itself). A snapshot (HEAD, branch, working-tree dirty flag, working-
+ * tree fingerprint) is captured at draft creation, rechecked at approval,
+ * and rechecked again at persistence-plan time -- three checkpoints, two
+ * comparisons (draft->approval, approval->plan). Any drift at either
+ * comparison fails the session closed into a new terminal 'stale' status
+ * rather than silently approving or regenerating. This does NOT mean
+ * approval now verifies "the repository state is currently correct" in
+ * some absolute sense -- it only means "nothing detectably changed
+ * between when this text was drafted/approved and when it is being acted
+ * on now." See docs/ARCHITECTURE.md for the full write-up, including the
+ * documented limitation of the working-tree fingerprint (Part H).
  */
 
 const DEFAULT_TTL_MS = 15 * 60 * 1000; // 15 minutes
 const DEFAULT_MAX_SESSIONS = 200;
 
-const TERMINAL_STATUSES = new Set(['approved', 'rejected', 'expired', 'superseded']);
+const TERMINAL_STATUSES = new Set(['approved', 'rejected', 'expired', 'superseded', 'stale']);
 
 function sha256(text) {
   return crypto.createHash('sha256').update(text, 'utf8').digest('hex');
@@ -117,10 +128,10 @@ class HandoffApprovalStore {
   }
 
   /**
-   * @param {{project:string, projectPath:string, requesterUserId:string, draftText:string}} params
+   * @param {{project:string, projectPath:string, requesterUserId:string, draftText:string, facts?:object}} params
    * @returns {object} the new session
    */
-  createSession({ project, projectPath, requesterUserId, draftText }) {
+  createSession({ project, projectPath, requesterUserId, draftText, facts = null }) {
     this._pruneExpired();
 
     const key = this._keyFor(requesterUserId, project);
@@ -140,6 +151,12 @@ class HandoffApprovalStore {
 
     this._evictIfAtCapacity();
 
+    // Repository state is captured HERE, deterministically, before the
+    // session is handed back to any caller -- the LLM gloss step (if any)
+    // has already finished by the time handoffDraft.js calls this, and
+    // nothing about the snapshot is derived from or influenced by it.
+    const draftSnapshot = repoState.captureRepositorySnapshot(project, projectPath);
+
     const now = this._now();
     const session = {
       draftId: crypto.randomUUID(),
@@ -148,6 +165,8 @@ class HandoffApprovalStore {
       requesterUserId,
       draftText,
       draftHash: sha256(draftText),
+      facts,
+      repositorySnapshot: { atDraft: draftSnapshot, atApproval: null, atPlan: null },
       status: 'pending',
       createdAt: now,
       expiresAt: now + this.ttlMs,
@@ -165,6 +184,20 @@ class HandoffApprovalStore {
       actor: requesterUserId,
       target: project,
       details: { draftId: session.draftId, createdAt: new Date(now).toISOString(), expiresAt: new Date(session.expiresAt).toISOString() },
+    });
+    auditLog.record({
+      action: 'handoff_repo_snapshot_captured',
+      actor: requesterUserId,
+      target: project,
+      details: {
+        draftId: session.draftId,
+        phase: 'draft',
+        isGitRepo: draftSnapshot.isGitRepo,
+        headCommit: draftSnapshot.headCommit,
+        branch: draftSnapshot.branch,
+        workingTreeDirty: draftSnapshot.workingTreeDirty,
+        capturedAt: draftSnapshot.capturedAt,
+      },
     });
 
     return session;
@@ -227,6 +260,13 @@ class HandoffApprovalStore {
       return { ok: false, reason: `status_${session.status}`, session };
     }
 
+    // Part F: approval-time repository recheck. Reject does not need this
+    // -- rejecting a draft is meaningful regardless of repository drift.
+    if (verb === 'approve') {
+      const denial = this._recheckRepositoryState(session, 'approval', actorUserId);
+      if (denial) return denial;
+    }
+
     const now = this._now();
     if (verb === 'approve') {
       session.status = 'approved';
@@ -249,6 +289,111 @@ class HandoffApprovalStore {
         details: { draftId, requesterUserId: session.requesterUserId },
       });
     }
+
+    return { ok: true, session };
+  }
+
+  /**
+   * Recaptures repository state and compares it against the given
+   * previous snapshot. On a match, records the fresh snapshot into
+   * `session.repositorySnapshot[intoKey]` and returns `null` (no denial).
+   * On drift (or a capture error on either side), flips the session to
+   * 'stale', audits both `handoff_draft_stale` and the given denial
+   * action, and returns a denial object the caller should return as-is.
+   */
+  _recheckRepositoryState(session, phase, actorUserId) {
+    const previous = phase === 'approval' ? session.repositorySnapshot.atDraft : session.repositorySnapshot.atApproval;
+    const intoKey = phase === 'approval' ? 'atApproval' : 'atPlan';
+    const deniedAction = phase === 'approval' ? 'handoff_draft_approval_denied' : 'handoff_persistence_plan_denied';
+
+    const fresh = repoState.captureRepositorySnapshot(session.project, session.projectPath);
+
+    if (!repoState.snapshotsMatch(previous, fresh)) {
+      session.status = 'stale';
+      auditLog.record({
+        action: 'handoff_draft_stale',
+        actor: actorUserId,
+        target: session.project,
+        details: { draftId: session.draftId, phase, requesterUserId: session.requesterUserId },
+      });
+      auditLog.record({
+        action: deniedAction,
+        actor: actorUserId,
+        target: session.project,
+        details: { draftId: session.draftId, reason: 'stale', phase },
+      });
+      return { ok: false, reason: 'stale', session };
+    }
+
+    session.repositorySnapshot[intoKey] = fresh;
+    auditLog.record({
+      action: 'handoff_repo_snapshot_captured',
+      actor: actorUserId,
+      target: session.project,
+      details: {
+        draftId: session.draftId,
+        phase,
+        isGitRepo: fresh.isGitRepo,
+        headCommit: fresh.headCommit,
+        branch: fresh.branch,
+        workingTreeDirty: fresh.workingTreeDirty,
+        capturedAt: fresh.capturedAt,
+      },
+    });
+    return null;
+  }
+
+  /**
+   * Part R/S: the gate a `/wren handoff-plan` command must pass before a
+   * (dry-run only) persistence plan may be built. Requires the session to
+   * already be 'approved' and repository state to still match what was
+   * true at approval time; drift here fails the session closed to
+   * 'stale', exactly as an approval-time drift does.
+   * @param {{draftId:string, actorUserId:string, isAdmin:boolean}} params
+   * @returns {{ok:boolean, reason?:string, session?:object}}
+   */
+  beginPersistencePlan({ draftId, actorUserId, isAdmin }) {
+    const session = this.getSession(draftId);
+
+    if (!session) {
+      auditLog.record({
+        action: 'handoff_persistence_plan_denied',
+        actor: actorUserId,
+        target: null,
+        details: { draftId: String(draftId || ''), reason: 'unknown_draft' },
+      });
+      return { ok: false, reason: 'unknown_draft' };
+    }
+
+    if (session.requesterUserId !== actorUserId && !isAdmin) {
+      auditLog.record({
+        action: 'handoff_persistence_plan_denied',
+        actor: actorUserId,
+        target: session.project,
+        details: { draftId, reason: 'not_authorized' },
+      });
+      return { ok: false, reason: 'not_authorized', session };
+    }
+
+    if (session.status !== 'approved') {
+      auditLog.record({
+        action: 'handoff_persistence_plan_denied',
+        actor: actorUserId,
+        target: session.project,
+        details: { draftId, reason: `status_${session.status}` },
+      });
+      return { ok: false, reason: `status_${session.status}`, session };
+    }
+
+    const denial = this._recheckRepositoryState(session, 'plan', actorUserId);
+    if (denial) return denial;
+
+    auditLog.record({
+      action: 'handoff_persistence_plan_generated',
+      actor: actorUserId,
+      target: session.project,
+      details: { draftId, requesterUserId: session.requesterUserId },
+    });
 
     return { ok: true, session };
   }
